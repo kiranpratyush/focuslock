@@ -47,6 +47,26 @@ These extras apply to **this session only**. Your answers are remembered (`last-
 
 Keys: Ctrl+Enter (or Enter in the duration or apps box) starts, Tab moves between boxes, Esc cancels.
 
+## A reminder to plan
+
+The hardest part is remembering to start. With the cue on, FocusLock reminds you whenever no session is running:
+- **A thin amber line** breathes slowly along the top of the screen, a quiet sign that no session is running, with a few **faint sparks** drifting down from it and fading out. Clicks pass straight through both. (`"particles": false` turns the sparks off.)
+- **About a minute after you sign in, then every 45 minutes while you're idle,** a pill slides down from the top: *"▶ Plan your next focus session"*. Click it for the start window; × dismisses it until the next reminder. It slides away by itself after 20 seconds.
+- It's **quiet during a session**, gives you a **5-minute break** after one, and stays out of the way while you're **presenting or full screen** and in **Do Not Disturb**. Set `workHours` if you also want it quiet at certain hours.
+
+Turn it on once:
+```
+focuslock startup on       start the cue now (with a hello pill) and at every sign-in; just for your user, no admin
+focuslock startup off      stop it, and don't start at sign-in
+focuslock startup status
+```
+Settings, in `focus.json`:
+```json
+"cue": { "enabled": true, "line": true, "particles": true, "remindEveryMinutes": 45, "workHours": "",
+         "weekdaysOnly": false, "afterSessionMinutes": 5, "startupDelaySeconds": 60 }
+```
+`workHours` is `""` (any time) by default; set it like `"09:00-19:00"`, or past midnight like `"22:00-02:00"`. Changes apply within a minute. Nothing is ever blocked while there's no session: the cue only nudges.
+
 ## Rationing email and chat
 
 Outlook and Teams are fine for work, but checking them every five minutes isn't. With `"rations"`, each gets **check windows**:
@@ -215,6 +235,7 @@ Everything lives in `%LOCALAPPDATA%\FocusLock\`:
 | `focuslock.log` | What got blocked and why, Jev answers, restarts |
 | `state.json` | Current session: end time, boot time, task, this session's extra sites and apps, accepted explanations |
 | `eval-cases.jsonl` | Test cases from `judge-eval make`, for you to label |
+| `focuslock.log` (cue lines) | When the cue started and each reminder it showed |
 | `last-session.json` | Your last answers in the start window, to pre-fill the next one |
 | `focuslock-guard.exe`, `focuslock-worker.exe` | Copies of the exe that run the session |
 
@@ -244,7 +265,9 @@ cmd/focuslock          the Windows app (package main)
   ├─ internal/classify   decides each window: rules → explanations → judge
   │    └─ internal/judge   asks a judge (Jev, OpenAI-compatible, Copilot, jevos)
   ├─ internal/config     focus.json, and the start window's per-session setup
-  └─ internal/session    state.json: the running session
+  ├─ internal/session    state.json: the running session
+  ├─ internal/cue        when to remind you to plan a session
+  └─ internal/particles  the cue's falling sparks (per-pixel drawing)
 internal/logx, internal/textutil   logging and two tiny string helpers, used by all
 ```
 
@@ -274,6 +297,8 @@ Imports only point downward: `cmd` → `classify` → `judge` → `config`. Noth
 | | `monitors_windows.go` | checking the front window on other monitors |
 | | `uia_windows.go` | reading the address bar with UI Automation (COM) |
 | | `jevos_windows.go` | starting and restarting `jev.exe` for a session |
+| | `cue_windows.go` | the reminder: breathing line and sliding pill |
+| | `startup_windows.go` | `startup on/off`: the per-user Run entry in the registry |
 | | `winapi_windows.go` | Win32 calls through `syscall`, no dependencies |
 | `internal/classify` | `classify.go` | the decision pipeline, settle delay, cache |
 | | `rules.go`, `urls.go`, `titles.go` | domain, process and title rules; strict sites; placeholder titles; pop-ups |
@@ -288,5 +313,7 @@ Imports only point downward: `cmd` → `classify` → `judge` → `config`. Noth
 | | `check.go` | `judge-check` |
 | `internal/config` | `config.go`, `setup.go` | focus.json; the start window's per-session setup |
 | `internal/session` | `state.go`, `boottime_*.go` | state.json; when Windows booted |
+| `internal/cue` | `cue.go` | when to remind you to plan (a plain function, tested) |
+| `internal/particles` | `particles.go` | the cue's falling sparks: simulation and per-pixel drawing (tested) |
 
 Tests sit next to the code they test (`*_test.go`): `go test ./...`

@@ -46,6 +46,16 @@ func main() {
 	case "config":
 		_, _ = config.Load(dir)
 		fmt.Println(filepath.Join(dir, "focus.json"))
+	case "cue":
+		cfg, err := config.Load(dir)
+		if err != nil {
+			logx.Printf("config error, using defaults: %v", err)
+			cfg = config.Default()
+			cfg.Normalize()
+		}
+		runCue(dir, cfg, len(args) > 1 && args[1] == "--hello")
+	case "startup":
+		cmdStartup(dir, args[1:])
 	case "judge-check":
 		cfg, err := config.Load(dir)
 		if err != nil {
@@ -83,6 +93,7 @@ func usage() {
   focuslock start 50m "task" --no-prompt       start without the window
   focuslock status                             show time left and the task
   focuslock config                             print the path of focus.json
+  focuslock startup on | off | status          remind you to plan a session when you sign in
   focuslock judge-check ["task"]               try the judge on a few sample pages
   focuslock judge-eval make                    turn your log into test cases to label
   focuslock judge-eval                         score the judge on your labelled cases

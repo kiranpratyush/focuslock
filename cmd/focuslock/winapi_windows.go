@@ -17,63 +17,80 @@ var (
 	gdi32    = syscall.NewLazyDLL("gdi32.dll")
 	shell32  = syscall.NewLazyDLL("shell32.dll")
 
-	pGetForegroundWindow        = user32.NewProc("GetForegroundWindow")
-	pGetWindowTextW             = user32.NewProc("GetWindowTextW")
-	pGetWindowThreadProcessId   = user32.NewProc("GetWindowThreadProcessId")
-	pGetWindowRect              = user32.NewProc("GetWindowRect")
-	pIsIconic                   = user32.NewProc("IsIconic")
-	pSetWindowPos               = user32.NewProc("SetWindowPos")
-	pShowWindow                 = user32.NewProc("ShowWindow")
-	pRegisterClassExW           = user32.NewProc("RegisterClassExW")
-	pCreateWindowExW            = user32.NewProc("CreateWindowExW")
-	pDefWindowProcW             = user32.NewProc("DefWindowProcW")
-	pGetMessageW                = user32.NewProc("GetMessageW")
-	pTranslateMessage           = user32.NewProc("TranslateMessage")
-	pDispatchMessageW           = user32.NewProc("DispatchMessageW")
-	pPostQuitMessage            = user32.NewProc("PostQuitMessage")
-	pDestroyWindow              = user32.NewProc("DestroyWindow")
-	pSetTimer                   = user32.NewProc("SetTimer")
-	pInvalidateRect             = user32.NewProc("InvalidateRect")
-	pBeginPaint                 = user32.NewProc("BeginPaint")
-	pEndPaint                   = user32.NewProc("EndPaint")
-	pGetClientRect              = user32.NewProc("GetClientRect")
-	pFillRect                   = user32.NewProc("FillRect")
-	pDrawTextW                  = user32.NewProc("DrawTextW")
-	pSendInput                  = user32.NewProc("SendInput")
-	pGetSystemMetrics           = user32.NewProc("GetSystemMetrics")
-	pSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
-	pSetProcessDPIAware         = user32.NewProc("SetProcessDPIAware")
-	pLoadCursorW                = user32.NewProc("LoadCursorW")
-	pMoveWindow                 = user32.NewProc("MoveWindow")
-	pSetWindowTextW             = user32.NewProc("SetWindowTextW")
-	pEnableWindow               = user32.NewProc("EnableWindow")
-	pSetFocus                   = user32.NewProc("SetFocus")
-	pSetForegroundWindow        = user32.NewProc("SetForegroundWindow")
-	pSendMessageW               = user32.NewProc("SendMessageW")
-	pSetBkColor                 = gdi32.NewProc("SetBkColor")
-	pGetWindowTextLengthW       = user32.NewProc("GetWindowTextLengthW")
-	pGetKeyState                = user32.NewProc("GetKeyState")
-	pGetDpiForSystem            = user32.NewProc("GetDpiForSystem")
-	pEnumWindows                = user32.NewProc("EnumWindows")
-	pIsWindowVisible            = user32.NewProc("IsWindowVisible")
-	pMonitorFromWindow          = user32.NewProc("MonitorFromWindow")
-	pGetWindowLongPtrW          = user32.NewProc("GetWindowLongPtrW")
-	pGetWindow                  = user32.NewProc("GetWindow")
-	pDwmGetWindowAttribute      = syscall.NewLazyDLL("dwmapi.dll").NewProc("DwmGetWindowAttribute")
-	pCreateSolidBrush           = gdi32.NewProc("CreateSolidBrush")
-	pCreateFontW                = gdi32.NewProc("CreateFontW")
-	pSelectObject               = gdi32.NewProc("SelectObject")
-	pSetTextColor               = gdi32.NewProc("SetTextColor")
-	pSetBkMode                  = gdi32.NewProc("SetBkMode")
-	pSHAppBarMessage            = shell32.NewProc("SHAppBarMessage")
-	pQueryFullProcessImageNameW = kernel32.NewProc("QueryFullProcessImageNameW")
-	pCreateMutexW               = kernel32.NewProc("CreateMutexW")
-	pGetModuleHandleW           = kernel32.NewProc("GetModuleHandleW")
+	pGetForegroundWindow          = user32.NewProc("GetForegroundWindow")
+	pGetWindowTextW               = user32.NewProc("GetWindowTextW")
+	pGetWindowThreadProcessId     = user32.NewProc("GetWindowThreadProcessId")
+	pGetWindowRect                = user32.NewProc("GetWindowRect")
+	pIsIconic                     = user32.NewProc("IsIconic")
+	pSetWindowPos                 = user32.NewProc("SetWindowPos")
+	pShowWindow                   = user32.NewProc("ShowWindow")
+	pRegisterClassExW             = user32.NewProc("RegisterClassExW")
+	pCreateWindowExW              = user32.NewProc("CreateWindowExW")
+	pDefWindowProcW               = user32.NewProc("DefWindowProcW")
+	pGetMessageW                  = user32.NewProc("GetMessageW")
+	pTranslateMessage             = user32.NewProc("TranslateMessage")
+	pDispatchMessageW             = user32.NewProc("DispatchMessageW")
+	pPostQuitMessage              = user32.NewProc("PostQuitMessage")
+	pDestroyWindow                = user32.NewProc("DestroyWindow")
+	pSetTimer                     = user32.NewProc("SetTimer")
+	pInvalidateRect               = user32.NewProc("InvalidateRect")
+	pBeginPaint                   = user32.NewProc("BeginPaint")
+	pEndPaint                     = user32.NewProc("EndPaint")
+	pGetClientRect                = user32.NewProc("GetClientRect")
+	pFillRect                     = user32.NewProc("FillRect")
+	pDrawTextW                    = user32.NewProc("DrawTextW")
+	pSendInput                    = user32.NewProc("SendInput")
+	pGetSystemMetrics             = user32.NewProc("GetSystemMetrics")
+	pSetLayeredWindowAttributes   = user32.NewProc("SetLayeredWindowAttributes")
+	pSetProcessDPIAware           = user32.NewProc("SetProcessDPIAware")
+	pLoadCursorW                  = user32.NewProc("LoadCursorW")
+	pMoveWindow                   = user32.NewProc("MoveWindow")
+	pSetWindowTextW               = user32.NewProc("SetWindowTextW")
+	pEnableWindow                 = user32.NewProc("EnableWindow")
+	pSetFocus                     = user32.NewProc("SetFocus")
+	pSetForegroundWindow          = user32.NewProc("SetForegroundWindow")
+	pSendMessageW                 = user32.NewProc("SendMessageW")
+	pSetBkColor                   = gdi32.NewProc("SetBkColor")
+	pCreateRoundRectRgn           = gdi32.NewProc("CreateRoundRectRgn")
+	pCreateCompatibleDC           = gdi32.NewProc("CreateCompatibleDC")
+	pCreateDIBSection             = gdi32.NewProc("CreateDIBSection")
+	pGetDC                        = user32.NewProc("GetDC")
+	pReleaseDC                    = user32.NewProc("ReleaseDC")
+	pUpdateLayeredWindow          = user32.NewProc("UpdateLayeredWindow")
+	pSetWindowRgn                 = user32.NewProc("SetWindowRgn")
+	pAllowSetForegroundWindow     = user32.NewProc("AllowSetForegroundWindow")
+	pFindWindowW                  = user32.NewProc("FindWindowW")
+	pPostMessageW                 = user32.NewProc("PostMessageW")
+	pSHQueryUserNotificationState = shell32.NewProc("SHQueryUserNotificationState")
+	pGetWindowTextLengthW         = user32.NewProc("GetWindowTextLengthW")
+	pGetKeyState                  = user32.NewProc("GetKeyState")
+	pGetDpiForSystem              = user32.NewProc("GetDpiForSystem")
+	pEnumWindows                  = user32.NewProc("EnumWindows")
+	pIsWindowVisible              = user32.NewProc("IsWindowVisible")
+	pMonitorFromWindow            = user32.NewProc("MonitorFromWindow")
+	pGetWindowLongPtrW            = user32.NewProc("GetWindowLongPtrW")
+	pGetWindow                    = user32.NewProc("GetWindow")
+	pDwmGetWindowAttribute        = syscall.NewLazyDLL("dwmapi.dll").NewProc("DwmGetWindowAttribute")
+	pCreateSolidBrush             = gdi32.NewProc("CreateSolidBrush")
+	pCreateFontW                  = gdi32.NewProc("CreateFontW")
+	pSelectObject                 = gdi32.NewProc("SelectObject")
+	pSetTextColor                 = gdi32.NewProc("SetTextColor")
+	pSetBkMode                    = gdi32.NewProc("SetBkMode")
+	pSHAppBarMessage              = shell32.NewProc("SHAppBarMessage")
+	pQueryFullProcessImageNameW   = kernel32.NewProc("QueryFullProcessImageNameW")
+	pCreateMutexW                 = kernel32.NewProc("CreateMutexW")
+	pGetModuleHandleW             = kernel32.NewProc("GetModuleHandleW")
 )
 
 const (
 	WS_POPUP                          = 0x80000000
 	WS_CHILD                          = 0x40000000
+	WS_EX_TRANSPARENT                 = 0x00000020 // clicks pass through to the window below
+	SWP_NOSIZE                        = 0x0001
+	ULW_ALPHA                         = 0x2
+	AC_SRC_OVER                       = 0x0
+	AC_SRC_ALPHA                      = 0x1
+	ASFW_ANY                          = 0xFFFFFFFF
 	WS_VISIBLE                        = 0x10000000
 	WS_CAPTION                        = 0x00C00000
 	WS_SYSMENU                        = 0x00080000
@@ -147,6 +164,26 @@ const (
 type RECT struct{ Left, Top, Right, Bottom int32 }
 
 type POINT struct{ X, Y int32 }
+
+type SIZE struct{ CX, CY int32 }
+
+type BITMAPINFOHEADER struct {
+	Size          uint32
+	Width, Height int32
+	Planes        uint16
+	BitCount      uint16
+	Compression   uint32
+	SizeImage     uint32
+	XPelsPerMeter int32
+	YPelsPerMeter int32
+	ClrUsed       uint32
+	ClrImportant  uint32
+}
+
+// BLENDFUNCTION tells UpdateLayeredWindow to use each pixel's own alpha.
+type BLENDFUNCTION struct {
+	BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat byte
+}
 
 type MSG struct {
 	Hwnd    uintptr

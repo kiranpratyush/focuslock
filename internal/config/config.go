@@ -49,6 +49,8 @@ type Config struct {
 	Explain              ExplainConfig `json:"explain"`
 	// Email, chat: allowed in check windows (e.g. 5 minutes every 30), covered in between.
 	Rations []RationRule `json:"rations"`
+	// The reminder to plan a session, while none is running (focuslock cue).
+	Cue CueConfig `json:"cue"`
 }
 
 type MusicConfig struct {
@@ -185,6 +187,10 @@ func Default() Config {
 		Copilot: CopilotConfig{Model: "gpt-5-mini"},
 		Jevos:   JevosConfig{Endpoint: "http://127.0.0.1:8017/v1/systemone", APIKeyEnv: "JEV_API_KEY"},
 		Explain: ExplainConfig{Enabled: true, MaxPerSession: 3},
+		Cue: CueConfig{
+			Enabled: true, Line: true, Particles: true, RemindEveryMinutes: 45, WorkHours: "",
+			AfterSessionMinutes: 5, StartupDelaySeconds: 60,
+		},
 		Rations: []RationRule{
 			{
 				Name:         "Email",
@@ -259,6 +265,9 @@ func (c *Config) Normalize() {
 	c.AllowTitleKeywords = lower(c.AllowTitleKeywords)
 	c.BlockTitleKeywords = lower(c.BlockTitleKeywords)
 	c.MusicTitleKeywords = lower(c.MusicTitleKeywords)
+	c.Cue.RemindEveryMinutes = max(c.Cue.RemindEveryMinutes, 5)
+	c.Cue.AfterSessionMinutes = max(c.Cue.AfterSessionMinutes, 0)
+	c.Cue.StartupDelaySeconds = max(c.Cue.StartupDelaySeconds, 0)
 	for i := range c.Rations {
 		r := &c.Rations[i]
 		r.Match = lower(r.Match)
@@ -283,4 +292,25 @@ type RationRule struct {
 	ForMinutes   int      `json:"forMinutes"`
 	// Never covered when the title contains one of these (a Teams call).
 	ExceptTitleKeywords []string `json:"exceptTitleKeywords"`
+}
+
+// CueConfig: "focuslock cue" (started at login with "focuslock startup on")
+// reminds you to plan a session whenever none is running.
+type CueConfig struct {
+	Enabled bool `json:"enabled"`
+	// A thin breathing line along the top of the screen while idle.
+	Line bool `json:"line"`
+	// A few faint amber sparks drifting down from the line. Just decoration.
+	Particles bool `json:"particles"`
+	// How often the "plan your next session" pill slides down while idle.
+	RemindEveryMinutes int `json:"remindEveryMinutes"`
+	// Only remind within these hours, like "09:00-19:00" ("22:00-02:00"
+	// wraps past midnight). "" (the default) means any time: quiet hours are
+	// something you choose, not a surprise when you work late.
+	WorkHours    string `json:"workHours"`
+	WeekdaysOnly bool   `json:"weekdaysOnly"`
+	// A break after a session before the next reminder.
+	AfterSessionMinutes int `json:"afterSessionMinutes"`
+	// First reminder this long after login, once the desktop has settled.
+	StartupDelaySeconds int `json:"startupDelaySeconds"`
 }

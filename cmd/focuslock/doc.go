@@ -18,5 +18,7 @@
 //	the address bar      uia_windows.go: reads a tab's real URL with
 //	                     UI Automation, the accessibility API
 //	jevos                jevos_windows.go: starts jev.exe when the judge is jevos
+//	between sessions     cue_windows.go: a breathing line and a "plan your next
+//	                     session" pill; startup_windows.go starts it at sign-in
 //	Win32 plumbing       winapi_windows.go: raw syscalls, no dependencies
 package main
