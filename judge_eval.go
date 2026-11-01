@@ -131,6 +131,12 @@ func runEval(cfg Config, cases []EvalCase, w io.Writer) evalSummary {
 		if !ok {
 			cls = NewClassifier(cfg, c.Task)
 			cls.judge = j // one judge (one Copilot CLI, one connection) for all
+			if detail, err := describeTask(cfg, j, c.Task); err != nil {
+				fmt.Fprintf(w, "Couldn't spell out %q: %v\n", c.Task, err)
+			} else if detail != "" {
+				cls.SetTaskDetail(detail)
+				fmt.Fprintf(w, "Task %q, as the judge spelled it out:\n  %s\n\n", c.Task, strings.ReplaceAll(detail, "\n", "\n  "))
+			}
 			byTask[c.Task] = cls
 		}
 		u := ""

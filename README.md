@@ -130,6 +130,18 @@ Small models (1–3B) are fine at "is this fun?" and decent at "is this my task?
 
 How it judges: jevos speaks Jev's API but needs different questions. Tested on 86 decisions from real sessions, Jev's multiple-choice question scored 57% with it. Direct yes/no questions with your task written in ("Is this page about *your task*?", "Is it a general work tool?", "Is it entertainment?") scored **94%; Jev scored 95%** on the same cases. Answers take about 0.6 s. It's weaker than Jev at judging **explanations**: it reads only your reason and checks that it's about your task, so a reason that just names the topic can get through.
 
+**Your task, spelled out.** With a judge that can write (Copilot, or an OpenAI-compatible model), `focuslock start` first asks it to describe your task in four lines: the goal, related topics, typical resources, and nearby topics that don't help. Every tab and app is then judged against that, which works much better than a one-line task. For example, *"my plan is work on building a windows service in C#…"* becomes:
+```
+Goal: Build a Windows service in C#.
+Topics: Windows services, C#, service configuration and lifecycle
+Resources: Documentation, tutorials, and search results about Windows services and C#
+Not part of it: Unrelated C# topics or Windows development unrelated to services
+```
+- It's printed when the session starts and written to the log.
+- The bar and the block screen still show your own wording.
+- It adds one judge request (about 5 s) at start. If it fails, the task is used as written.
+- Turn it off with `"judge": {"describeTask": false}`. Jev and jevos don't use it; jevos tested no better with it.
+
 **Before a real session, run `focuslock judge-check`.** It shows which judge is active, asks it about four sample pages and prints the answers and timings. Then try `focuslock start 2` for a two-minute test.
 
 ## How a tab is judged
@@ -233,6 +245,7 @@ taskkill /f /im focuslock-guard.exe /im focuslock-worker.exe
 - `judge_jevos.go`, `jevos_windows.go`: the jevos judge, and starting/restarting `jev.exe` for a session
 - `judge_check.go`, `judge_eval.go`: `focuslock judge-check` and `judge-eval`
 - `explain.go`: explaining blocks, session notes (portable, tested)
+- `task_detail.go`: the judge spelling out your task at session start
 - `ration.go`: check windows for email and chat (portable, tested)
 - `session_setup.go`, `setup_windows.go`: the start window, and this session's extra sites and apps
 - `uia_windows.go`: reads the address bar via UI Automation (COM)

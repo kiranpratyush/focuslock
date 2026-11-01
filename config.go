@@ -76,6 +76,9 @@ type JudgeConfig struct {
 	// With a task, an app the judge isn't sure about is covered (overlay only,
 	// never killed). false: unsure apps are allowed, as before.
 	StrictApps bool `json:"strictApps"`
+	// Judges that can write (Copilot, LLMs) spell the task out in four lines
+	// once per session, and judge against that.
+	DescribeTask bool `json:"describeTask"`
 	// Send the tab's domain+path (never the ?query part) along with the title.
 	SendURL bool `json:"sendUrl"`
 }
@@ -169,6 +172,7 @@ func defaultConfig() Config {
 			MusicThreshold: 0.9,
 			TimeoutMs:      8000,
 			SettleMs:       1200,
+			DescribeTask:   true,
 			StrictApps:     true,
 			SendURL:        true,
 		},

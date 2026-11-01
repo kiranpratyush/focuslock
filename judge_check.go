@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -22,7 +23,15 @@ func judgeCheck(cfg Config, intent string, w io.Writer) {
 	if intent == "" {
 		intent = "Learn Go channels and select: buffered vs unbuffered, closing channels, worker pools"
 	}
-	fmt.Fprintf(w, "Task: %s\n\n", intent)
+	fmt.Fprintf(w, "Task: %s\n", intent)
+	asked := intent
+	if detail, err := describeTask(cfg, j, intent); err != nil {
+		fmt.Fprintf(w, "Couldn't spell out the task: %v\n", err)
+	} else if detail != "" {
+		fmt.Fprintf(w, "As the judge spelled it out:\n  %s\n", strings.ReplaceAll(detail, "\n", "\n  "))
+		asked = detail
+	}
+	fmt.Fprintln(w)
 
 	if m, ok := j.(interface {
 		Models(context.Context) ([]string, error)
@@ -49,7 +58,7 @@ func judgeCheck(cfg Config, intent string, w io.Writer) {
 			Explanation: "research"},
 	}
 	for _, q := range samples {
-		q.Intent = intent
+		q.Intent = asked
 		label := q.Title
 		if q.Explanation != "" {
 			label += "  + explanation \"" + q.Explanation + "\""

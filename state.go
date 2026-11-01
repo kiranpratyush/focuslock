@@ -13,6 +13,8 @@ type State struct {
 	EndUnix  int64  `json:"endUnix"`
 	BootUnix int64  `json:"bootUnix"`
 	Intent   string `json:"intent,omitempty"` // the task, if given
+	// The task as the judge spelled it out at start (task_detail.go).
+	TaskDetail string `json:"taskDetail,omitempty"`
 	// Accepted explanations and how many were tried (explain.go).
 	Notes       []SessionNote `json:"notes,omitempty"`
 	ExplainUsed int           `json:"explainUsed,omitempty"`

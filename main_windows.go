@@ -133,6 +133,7 @@ func cmdStart(dir string, args []string) {
 	}
 	saveLastSetup(dir, setup)
 	intent := strings.TrimSpace(setup.Task)
+	detail := spellOutTask(cfg, intent)
 
 	// Two copies under different names: killing "focuslock.exe" by name
 	// doesn't touch them, and each one restarts the other.
@@ -146,7 +147,7 @@ func cmdStart(dir string, args []string) {
 		}
 	}
 
-	s := State{EndUnix: time.Now().Add(d).Unix(), BootUnix: bootTime().Unix(), Intent: intent,
+	s := State{EndUnix: time.Now().Add(d).Unix(), BootUnix: bootTime().Unix(), Intent: intent, TaskDetail: detail,
 		AllowDomains: setup.AllowDomains, AllowApps: setup.AllowApps}
 	if err := writeState(dir, s); err != nil {
 		fatal(err)
@@ -208,12 +209,16 @@ func runWorker(dir string, peer uint32) {
 	if s.Intent != "" {
 		logf("task: %s", s.Intent)
 	}
+	if s.TaskDetail != "" {
+		logf("task as the judge sees it: %s", strings.ReplaceAll(s.TaskDetail, "\n", " | "))
+	}
 	if len(s.AllowDomains)+len(s.AllowApps) > 0 {
 		logf("allowed this session: %s", strings.Join(append(append([]string{}, s.AllowDomains...), s.AllowApps...), ", "))
 	}
 	cfg.applySession(s)
 	go watchPeer(dir, peer, filepath.Join(dir, guardExeName), "guard")
 	cls := NewClassifier(cfg, s.Intent)
+	cls.SetTaskDetail(s.TaskDetail)
 	cls.Restore(s.Notes, s.ExplainUsed)
 	save := func() {
 		st := s
@@ -300,6 +305,33 @@ func dataDir() (string, error) {
 	}
 	dir := filepath.Join(base, "FocusLock")
 	return dir, os.MkdirAll(dir, 0o755)
+}
+
+// spellOutTask asks a judge that can write (Copilot, an LLM) to describe
+// the task in four lines, before the session starts. On any problem the
+// task is used as written.
+func spellOutTask(cfg Config, task string) string {
+	if task == "" || !cfg.Judge.DescribeTask {
+		return ""
+	}
+	j := newJudge(cfg)
+	if _, ok := j.(taskDescriber); !ok {
+		return ""
+	}
+	if c, ok := j.(closingJudge); ok {
+		defer c.Close()
+	}
+	fmt.Println("Asking the judge to spell out your task…")
+	detail, err := describeTask(cfg, j, task)
+	if err != nil {
+		fmt.Printf("Couldn't (%v); judging against the task as written.\n", err)
+		return ""
+	}
+	fmt.Println("The judge will check tabs and apps against:")
+	for _, l := range strings.Split(detail, "\n") {
+		fmt.Println("  " + l)
+	}
+	return detail
 }
 
 func copyFile(src, dst string) error {

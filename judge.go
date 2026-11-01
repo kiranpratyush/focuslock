@@ -172,7 +172,9 @@ func llmPrompt(q Question) (system, user string) {
 		`>", "confidence": <number from 0 to 1>}. No other text.`
 
 	var b strings.Builder
-	if q.Intent != "" {
+	if strings.Contains(q.Intent, "\n") {
+		b.WriteString("Current task:\n" + q.Intent + "\n") // spelled out (task_detail.go)
+	} else if q.Intent != "" {
 		b.WriteString("Current task: " + q.Intent + "\n")
 	}
 	if len(q.Notes) > 0 {

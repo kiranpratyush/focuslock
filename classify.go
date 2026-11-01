@@ -33,7 +33,9 @@ type Verdict struct {
 type Classifier struct {
 	cfg    Config
 	intent string
-	judge  Judge // nil = rules only
+	// The task as the judge spelled it out (task_detail.go); "" = as written.
+	taskDetail string
+	judge      Judge // nil = rules only
 
 	mu       sync.Mutex
 	cache    map[string]Verdict
@@ -73,6 +75,10 @@ func (c *Classifier) JudgeName() string {
 }
 
 func (c *Classifier) Intent() string { return c.intent }
+
+// SetTaskDetail gives the judge a fuller description of the task. The bar
+// and block screen keep showing the task as written.
+func (c *Classifier) SetTaskDetail(detail string) { c.taskDetail = strings.TrimSpace(detail) }
 
 // Classify never blocks on the network. proc is the lowercase exe name;
 // rawURL is the address bar text ("" when unknown).
@@ -171,7 +177,11 @@ func (c *Classifier) question(proc, title, host, path string) Question {
 	if c.cfg.Judge.SendURL && host != "" {
 		page = host + path
 	}
-	return Question{Intent: c.intent, App: proc, Title: title, Page: page}
+	task := c.intent
+	if task != "" && c.taskDetail != "" {
+		task = c.taskDetail
+	}
+	return Question{Intent: task, App: proc, Title: title, Page: page}
 }
 
 // isStrict reports whether a browser tab is on one of cfg.StrictDomains.

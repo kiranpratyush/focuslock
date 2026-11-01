@@ -88,6 +88,11 @@ func (j *copilotJudge) Ask(ctx context.Context, q Question) (Answer, error) {
 	return parseLLMAnswer(reply, Options(q.Intent))
 }
 
+// DescribeTask: see task_detail.go.
+func (j *copilotJudge) DescribeTask(ctx context.Context, system, user string) (string, error) {
+	return j.send(ctx, system, user)
+}
+
 func (j *copilotJudge) start(ctx context.Context) (*copilot.Client, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()

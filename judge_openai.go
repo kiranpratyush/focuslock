@@ -66,21 +66,34 @@ type chatResponse struct {
 
 func (o *openAIJudge) Ask(ctx context.Context, q Question) (Answer, error) {
 	system, user := llmPrompt(q)
+	reply, err := o.chat(ctx, system, user, 60, o.jsonMode)
+	if err != nil {
+		return Answer{}, err
+	}
+	return parseLLMAnswer(reply, Options(q.Intent))
+}
+
+// DescribeTask: see task_detail.go.
+func (o *openAIJudge) DescribeTask(ctx context.Context, system, user string) (string, error) {
+	return o.chat(ctx, system, user, 220, false)
+}
+
+func (o *openAIJudge) chat(ctx context.Context, system, user string, maxTokens int, jsonMode bool) (string, error) {
 	req := chatRequest{
 		Model:       o.model,
 		Messages:    []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
 		Temperature: 0,
-		MaxTokens:   60,
+		MaxTokens:   maxTokens,
 	}
-	if o.jsonMode {
+	if jsonMode {
 		req.ResponseFormat = map[string]string{"type": "json_object"}
 	}
 	var cr chatResponse
 	if err := postJSON(ctx, o.http, o.baseURL+"/chat/completions", o.key, req, &cr); err != nil {
-		return Answer{}, err
+		return "", err
 	}
 	if len(cr.Choices) == 0 {
-		return Answer{}, fmt.Errorf("empty reply")
+		return "", fmt.Errorf("empty reply")
 	}
-	return parseLLMAnswer(cr.Choices[0].Message.Content, Options(q.Intent))
+	return cr.Choices[0].Message.Content, nil
 }
