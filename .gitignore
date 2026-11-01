@@ -1,0 +1,11 @@
+# Build output: build it yourself, or attach it to a GitHub release
+*.exe
+
+# Windows "downloaded from the internet" tags
+*:Zone.Identifier
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
