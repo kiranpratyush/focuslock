@@ -17,10 +17,10 @@ The only ways out are the timer ending or restarting the PC.
 Needs Go 1.24+ on Windows. One dependency: the GitHub Copilot SDK, for the `"copilot"` judge.
 
 ```
-go build -ldflags "-s -w" -o focuslock.exe .
+go build -ldflags "-s -w" -o focuslock.exe ./cmd/focuslock
 ```
 
-The exe isn't in the repo; build it as above (from WSL: `GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o focuslock.exe .`).
+The exe isn't in the repo; build it as above (from WSL: `GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o focuslock.exe ./cmd/focuslock`).
 
 ## Use
 
@@ -235,19 +235,58 @@ taskkill /f /im focuslock-guard.exe /im focuslock-worker.exe
 - URL reading works best in Chrome, Edge, and Brave. Firefox falls back to the first text box it finds, which is usually the address bar.
 - No hosts-file site blocking (that needs admin; v2 with the Windows Service).
 
+## Architecture
+
+FocusLock is split into packages by job. Everything that decides what's allowed is portable Go under `internal/`, built and tested on any OS. Only `cmd/focuslock` touches Windows.
+
+```
+cmd/focuslock          the Windows app (package main)
+  ├─ internal/classify   decides each window: rules → explanations → judge
+  │    └─ internal/judge   asks a judge (Jev, OpenAI-compatible, Copilot, jevos)
+  ├─ internal/config     focus.json, and the start window's per-session setup
+  └─ internal/session    state.json: the running session
+internal/logx, internal/textutil   logging and two tiny string helpers, used by all
+```
+
+Imports only point downward: `cmd` → `classify` → `judge` → `config`. Nothing in `internal/` imports the Windows code, so every decision can be tested without Windows. Each package starts with a `doc.go` that explains it; `go doc ./internal/classify` prints it.
+
+**Following one tab through the code:**
+1. Every 500 ms, `tick()` (`cmd/focuslock/ui_windows.go`) finds the window in front and reads its URL from the address bar (`uia_windows.go`).
+2. It asks `classify.Classifier.Classify` (`internal/classify/classify.go`). Cheap rules go first (`rules.go`, `urls.go`, `titles.go`), then any explanations you gave (`explain.go`). Only then does it ask the judge.
+3. The judge (`internal/judge`) gets a `Question` and returns an `Answer`. `Decide` (`verdict.go`) turns that into a `Verdict`: allow, block, or music. Each judge is one file that registers itself by name.
+4. Back in `tick()`, a block becomes the overlay (`blockscreen_windows.go`). After the countdown, the tab gets Ctrl+W; a blocked app gets killed.
+5. The same check runs for the front window on each other monitor (`monitors_windows.go`).
+
+**Where to start reading:**
+- `internal/judge/judge.go`: the `Judge` interface. Every judge implements just two methods, `Name` and `Ask`.
+- `internal/classify/classify.go`: `Classify`, the decision pipeline in one function.
+- `cmd/focuslock/ui_windows.go`: `tick()`, where it all comes together.
+
 ## Code map
 
-- `main_windows.go`: CLI, session start, guard/worker watchdog pair
-- `ui_windows.go`: AppBar, overlay, and the 500ms monitor loop
-- `classify.go`: URL/title/process rules, caching, verdicts (portable, tested)
-- `judge.go`: what a judge is asked and answers, plus the judge registry (portable, tested)
-- `judge_jev.go`, `judge_openai.go`, `judge_copilot.go`, `judge_jevos.go`: one file per judge. Each registers itself with `registerJudge`; a new judge is one new file
-- `judge_jevos.go`, `jevos_windows.go`: the jevos judge, and starting/restarting `jev.exe` for a session
-- `judge_check.go`, `judge_eval.go`: `focuslock judge-check` and `judge-eval`
-- `explain.go`: explaining blocks, session notes (portable, tested)
-- `task_detail.go`: the judge spelling out your task at session start
-- `ration.go`: check windows for email and chat (portable, tested)
-- `session_setup.go`, `setup_windows.go`: the start window, and this session's extra sites and apps
-- `uia_windows.go`: reads the address bar via UI Automation (COM)
-- `winapi_windows.go`: Win32 calls via `syscall`
-- `config.go`, `state.go`: settings and session file
+| Package | Files | What's there |
+|---|---|---|
+| `cmd/focuslock` | `main_windows.go` | commands: start, status, config, judge-check, judge-eval |
+| | `worker_windows.go` | the guard and worker that restart each other |
+| | `setup_windows.go` | the start window |
+| | `ui_windows.go` | the 500 ms monitor loop and the top bar |
+| | `blockscreen_windows.go` | the overlay: what it says, the explain box, drawing |
+| | `monitors_windows.go` | checking the front window on other monitors |
+| | `uia_windows.go` | reading the address bar with UI Automation (COM) |
+| | `jevos_windows.go` | starting and restarting `jev.exe` for a session |
+| | `winapi_windows.go` | Win32 calls through `syscall`, no dependencies |
+| `internal/classify` | `classify.go` | the decision pipeline, settle delay, cache |
+| | `rules.go`, `urls.go`, `titles.go` | domain, process and title rules; strict sites; placeholder titles; pop-ups |
+| | `explain.go` | explaining a block; session notes |
+| | `ration.go` | check windows for email and chat |
+| | `eval.go` | `judge-eval`: score a judge on labelled cases from your log |
+| `internal/judge` | `judge.go` | the `Judge` interface, optional extras, the registry |
+| | `verdict.go` | `Category`, `Verdict`, and `Decide` (answer → verdict) |
+| | `prompt.go` | the categories and the text prompt for LLM judges |
+| | `jev.go`, `openai.go`, `copilot.go`, `jevos.go` | one file per judge |
+| | `describe.go` | spelling out your task at session start |
+| | `check.go` | `judge-check` |
+| `internal/config` | `config.go`, `setup.go` | focus.json; the start window's per-session setup |
+| `internal/session` | `state.go`, `boottime_*.go` | state.json; when Windows booted |
+
+Tests sit next to the code they test (`*_test.go`): `go test ./...`
