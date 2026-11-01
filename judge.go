@@ -52,7 +52,21 @@ type (
 	timeoutJudge interface{ Timeout() time.Duration }
 	// closingJudge: judges holding a process or connection.
 	closingJudge interface{ Close() }
+	// verdictJudge: judges that turn their own answers into a verdict,
+	// instead of FocusLock's thresholds (tuned for Jev's probabilities).
+	verdictJudge interface {
+		Verdict(a Answer, strict bool, cfg JudgeConfig) Verdict
+	}
 )
+
+// judgeVerdict turns an answer into a verdict, letting the judge decide if
+// it knows better.
+func judgeVerdict(j Judge, a Answer, strict bool, cfg JudgeConfig) Verdict {
+	if vj, ok := j.(verdictJudge); ok {
+		return vj.Verdict(a, strict, cfg)
+	}
+	return decide(a, cfg.Threshold, cfg.MusicThreshold, strict)
+}
 
 // ---------- registry ----------
 

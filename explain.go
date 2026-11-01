@@ -116,7 +116,7 @@ func (c *Classifier) Explain(ctx context.Context, proc, title, rawURL, reason st
 		c.mu.Unlock()
 		return ExplainResult{Label: label}, err
 	}
-	v := decide(a, c.cfg.Judge.Threshold, c.cfg.Judge.MusicThreshold, true)
+	v := judgeVerdict(c.judge, a, true, c.cfg.Judge)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

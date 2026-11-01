@@ -63,7 +63,7 @@ func judgeCheck(cfg Config, intent string, w io.Writer) {
 			fmt.Fprintf(w, "%-75s  ERROR after %s: %v\n", shorten(label, 75), took, err)
 			continue
 		}
-		v := decide(a, cfg.Judge.Threshold, cfg.Judge.MusicThreshold, q.Explanation != "")
+		v := judgeVerdict(j, a, q.Explanation != "", cfg.Judge)
 		fmt.Fprintf(w, "%-75s  %-8s [%s %.2f]  %s\n", shorten(label, 75), v.Cat, a.Choice, a.Confidence, took)
 	}
 }

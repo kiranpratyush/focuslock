@@ -48,7 +48,20 @@ func main() {
 		if err != nil {
 			fatal(fmt.Errorf("focus.json: %w", err))
 		}
+		stop := superviseJevos(cfg, false)
 		judgeCheck(cfg, strings.Join(args[1:], " "), os.Stdout)
+		stop()
+	case "judge-eval":
+		cfg, err := loadConfig(dir)
+		if err != nil {
+			fatal(fmt.Errorf("focus.json: %w", err))
+		}
+		stop := superviseJevos(cfg, false)
+		err = judgeEvalCommand(cfg, filepath.Join(dir, "focuslock.log"), filepath.Join(dir, "eval-cases.jsonl"), args[1:], os.Stdout)
+		stop()
+		if err != nil {
+			fatal(err)
+		}
 	case "guard":
 		runGuard(dir, peerArg(args))
 	case "worker":
@@ -68,11 +81,14 @@ func usage() {
   focuslock status                             show time left and the task
   focuslock config                             print the path of focus.json
   focuslock judge-check ["task"]               try the judge on a few sample pages
+  focuslock judge-eval make                    turn your log into test cases to label
+  focuslock judge-eval                         score the judge on your labelled cases
 
 Durations: 50m, 1h30m, or just 45 (minutes).
 There is no stop command. The session ends when the timer runs out or you restart the PC.
 Who judges unknown tabs/apps is set in focus.json -> "judge": "jev", "openai" (Ollama,
-LM Studio, any OpenAI-compatible API), "copilot" (GitHub Copilot CLI) or "none".`)
+LM Studio, any OpenAI-compatible API), "copilot" (GitHub Copilot CLI), "jevos" (local
+open-source Jev) or "none".`)
 }
 
 func cmdStart(dir string, args []string) {
@@ -206,7 +222,9 @@ func runWorker(dir string, peer uint32) {
 			logf("save explanations: %v", err)
 		}
 	}
+	stopJevos := superviseJevos(cfg, true)
 	runUI(cfg, s, cls, save)
+	stopJevos()
 	_ = os.Remove(statePath(dir))
 	logf("worker exiting: session over")
 }

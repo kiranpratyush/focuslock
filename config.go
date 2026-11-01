@@ -17,6 +17,9 @@ type Config struct {
 	AllowDomains []string `json:"allowDomains"`
 	MusicDomains []string `json:"musicDomains"`
 	BlockDomains []string `json:"blockDomains"`
+	// Web search results pages are always fine: the page you open from them
+	// is judged. (Not YouTube's results: that's a wall of videos.)
+	SearchDomains []string `json:"searchDomains"`
 	// Distraction sites the judge must clear: a tab here is allowed only when
 	// the judge is sure it's work or learning, and placeholder titles
 	// ("YouTube", a bare URL) are blocked without asking.
@@ -40,6 +43,7 @@ type Config struct {
 	Jev                  JevConfig     `json:"jev"`
 	OpenAI               OpenAIConfig  `json:"openai"`
 	Copilot              CopilotConfig `json:"copilot"`
+	Jevos                JevosConfig   `json:"jevos"`
 	Explain              ExplainConfig `json:"explain"`
 	// Email, chat: allowed in check windows (e.g. 5 minutes every 30), covered in between.
 	Rations []RationRule `json:"rations"`
@@ -55,6 +59,7 @@ type MusicConfig struct {
 //	provider "jev"    — TypeSafe Jev (needs TYPESAFE_API_KEY)
 //	provider "openai" — any OpenAI-compatible chat API: Ollama, LM Studio, OpenAI, Groq...
 //	provider "copilot" — GitHub Copilot through the Copilot CLI (work laptop)
+//	provider "jevos"  — jevos, an open-source Jev on your own CPU
 //	provider "none"   — rules only, nothing leaves the machine
 type JudgeConfig struct {
 	Provider  string  `json:"provider"`
@@ -86,6 +91,17 @@ type CopilotConfig struct {
 	// Every new tab or app judged is one request, so pick a cheap or included model.
 	Model   string `json:"model"`
 	CLIPath string `json:"cliPath"` // "" = find "copilot" on PATH
+}
+
+// JevosConfig: provider "jevos", the local open-source Jev (github.com/feder-cr/jev).
+type JevosConfig struct {
+	Endpoint string `json:"endpoint"`
+	// Path to jev.exe (with its model/ folder beside it). When set, FocusLock
+	// starts it for the session, restarts it if it stops, and stops it after.
+	// "" means you run it yourself.
+	Exe       string `json:"exe"`
+	Threads   int    `json:"threads"`   // 0 = half your CPU's threads
+	APIKeyEnv string `json:"apiKeyEnv"` // only if you set JEV_API_KEY on the server
 }
 
 // ExplainConfig: when the judge blocks something, you can say why you need it.
@@ -120,6 +136,10 @@ func defaultConfig() Config {
 			"hotstar.com", "twitch.tv", "9gag.com", "cricbuzz.com",
 		},
 		StrictDomains: []string{"youtube.com", "x.com", "twitter.com", "reddit.com"},
+		SearchDomains: []string{
+			"duckduckgo.com", "google.com/search", "google.co.in/search", "bing.com/search",
+			"search.brave.com", "search.yahoo.com", "ecosia.org/search", "startpage.com",
+		},
 		AllowTitleKeywords: []string{
 			"visual studio code", "stack overflow", "github", "localhost", "docs", "documentation",
 			"leetcode", "chatgpt", "claude", "postgresql",
@@ -138,6 +158,7 @@ func defaultConfig() Config {
 			"wt.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "wsl.exe", "ubuntu.exe", "explorer.exe",
 			"taskmgr.exe", "ms-teams.exe", "teams.exe", "outlook.exe", "olk.exe", "slack.exe",
 			"postman.exe", "ssms.exe", "notepad.exe", "obsidian.exe", "claude.exe",
+			"msrdc.exe", "googledrivefs.exe", // Remote Desktop / WSL apps, Google Drive
 			"searchhost.exe", "shellexperiencehost.exe", "startmenuexperiencehost.exe", "lockapp.exe",
 		},
 		Judge: JudgeConfig{
@@ -156,6 +177,7 @@ func defaultConfig() Config {
 			APIKeyEnv: "TYPESAFE_API_KEY",
 		},
 		Copilot: CopilotConfig{Model: "gpt-5-mini"},
+		Jevos:   JevosConfig{Endpoint: "http://127.0.0.1:8017/v1/systemone", APIKeyEnv: "JEV_API_KEY"},
 		Explain: ExplainConfig{Enabled: true, MaxPerSession: 3},
 		Rations: []RationRule{
 			{
@@ -221,6 +243,7 @@ func (c *Config) normalize() {
 	c.MusicDomains = lower(c.MusicDomains)
 	c.BlockDomains = lower(c.BlockDomains)
 	c.StrictDomains = lower(c.StrictDomains)
+	c.SearchDomains = lower(c.SearchDomains)
 	if c.Judge.SettleMs < 0 {
 		c.Judge.SettleMs = 0
 	}

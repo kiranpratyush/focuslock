@@ -31,6 +31,8 @@ focuslock start 50m "task" --no-prompt           start without the window
 focuslock status
 focuslock config                                 prints path to focus.json
 focuslock judge-check ["task"]                   try the judge on a few sample pages (and list Copilot models)
+focuslock judge-eval make                        turn your log into test cases to label
+focuslock judge-eval                             score the judge on your labelled cases
 ```
 
 ### The start window
@@ -87,6 +89,7 @@ Set `"judge": { "provider": ... }` in `focus.json`:
 |---|---|---|
 | `"jev"` (default) | TypeSafe Jev, fast and cheap, real probabilities | `setx TYPESAFE_API_KEY your-key`, new terminal |
 | `"openai"` | Any OpenAI-compatible chat API | Fill the `"openai"` section (below) |
+| `"jevos"` | [jevos](https://github.com/feder-cr/jev), an open-source Jev on your own CPU. Free, and nothing leaves the machine | Download it (below) and set `"jevos": {"exe": ...}` |
 | `"copilot"` | GitHub Copilot, through the Copilot CLI you're signed in to. Meant for the work laptop | `copilot` on PATH and signed in; pick a model (below) |
 | `"none"` | Rules only; nothing leaves the machine | — |
 
@@ -114,11 +117,25 @@ Small models (1–3B) are fine at "is this fun?" and decent at "is this my task?
 - **Every new tab or app judged is one Copilot request.** Answers are cached for the session, but pick a cheap or included model. `focuslock judge-check` lists your models with their premium-request cost.
 - If your org has turned the Copilot CLI off, the judge can't start, and FocusLock runs on rules only.
 
+**jevos** (local, free, private): an open-source Jev that runs on your CPU, about 1 GB of RAM, no GPU.
+1. From the [jevos release](https://github.com/feder-cr/jev/releases/tag/jevos-v5), download `jev-windows-x64.zip` and `jevos-v5-openvino-int8.zip`.
+2. Unzip the first, then unzip the model inside it, so you have `jev\jev.exe` and `jev\model\`.
+3. In `focus.json`:
+   ```json
+   "judge": { "provider": "jevos", ... },
+   "jevos": { "exe": "C:\\Tools\\jev\\jev.exe" }
+   ```
+   FocusLock starts `jev.exe` for each session (hidden), restarts it if it stops, and stops it afterwards. While it's down, strict sites stay covered. Leave `exe` empty if you run `jev.exe serve` yourself. `threads` defaults to half your CPU.
+4. Run `focuslock judge-check`. If Windows blocks `jev.exe` (Smart App Control), it says so in the log.
+
+How it judges: jevos speaks Jev's API but needs different questions. Tested on 86 decisions from real sessions, Jev's multiple-choice question scored 57% with it. Direct yes/no questions with your task written in ("Is this page about *your task*?", "Is it a general work tool?", "Is it entertainment?") scored **94%; Jev scored 95%** on the same cases. Answers take about 0.6 s. It's weaker than Jev at judging **explanations**: it reads only your reason and checks that it's about your task, so a reason that just names the topic can get through.
+
 **Before a real session, run `focuslock judge-check`.** It shows which judge is active, asks it about four sample pages and prints the answers and timings. Then try `focuslock start 2` for a two-minute test.
 
 ## How a tab is judged
 
-1. **URL rules** (browsers): `allowDomains`, then `musicDomains`, then `blockDomains`. `youtube.com` matches `m.youtube.com` too; `youtube.com/shorts` matches only that path. Browser pages like `chrome://settings` are allowed.
+1. **URL rules** (browsers): `allowDomains`, then `searchDomains`, then `musicDomains`, then `blockDomains`.
+   - **Web search results pages are always allowed** (`searchDomains`: DuckDuckGo, Google, Bing...). The page you open from them is judged. YouTube's results page isn't on the list, because it's a wall of videos. `youtube.com` matches `m.youtube.com` too; `youtube.com/shorts` matches only that path. Browser pages like `chrome://settings` are allowed.
 2. Process lists: `blockedProcesses` -> killed, `musicProcesses` -> music. Other non-browser apps are allowed.
 3. Browser title keywords, in order: `allowTitleKeywords`, then `musicTitleKeywords`, then `blockTitleKeywords`.
 4. **Strict sites** (`strictDomains`: youtube.com, x.com, twitter.com, reddit.com). These apply only when a judge is set:
@@ -134,7 +151,7 @@ Small models (1–3B) are fine at "is this fun?" and decent at "is this my task?
    - Browser pop-ups and bubbles (an "extension added" notice, a permission prompt) aren't judged. Installed web apps (YouTube as an app) still are.
    - It blocks only if the judge is at least `threshold` (0.75) sure. Unsure means allow (except on strict sites, above). Answers are cached, and things are allowed while the judge is still answering.
    - A title is judged only after it has stayed the same for `judge.settleMs` (1200 ms). Pages flip through placeholder titles while loading, and those used to get judged, giving answers that flipped a second later. Allow and block rules still apply instantly.
-6. If the judge is down or unset: allowed.
+6. If the judge is unset: allowed. If it's set but not answering (no network, jevos stopped): strict sites are covered until it's back ("the judge isn't answering"), everything else is allowed.
 
 The judge gets the **app**, the **window title**, the **domain + path** (for example `youtube.com/watch`) and your **task**. The `?query` part is never sent, since it can contain tokens or IDs. Set `"judge": {"sendUrl": false}` to send titles only. Every decision is written to the log.
 
@@ -144,6 +161,15 @@ The judge gets the **app**, the **window title**, the **domain + path** (for exa
 - Other apps the judge flags (with a task): overlay only, title bar left free. They are **never killed or sent keys**, since they might hold unsaved work.
 
 While you're typing in the address bar, FocusLock keeps using the last real URL, so half-typed text is never judged. If the URL can't be read (an unusual browser, for example), it falls back to title-only, as before.
+
+## How good is your judge?
+
+`focuslock judge-eval make` turns the judge's decisions in your log into `eval-cases.jsonl`, one per line. Set each `"label"` to `"A"` (should be allowed) or `"B"` (should be blocked); leave unsure ones empty. Then `focuslock judge-eval` runs the judge you've configured on them, through the real rules and thresholds. It prints:
+- how many it got right
+- every real-work page it blocked and every distraction it missed
+- how fast it answered
+
+Switch `judge.provider` and run it again to compare judges on your own browsing.
 
 ## Explaining a block
 
@@ -176,6 +202,7 @@ Everything lives in `%LOCALAPPDATA%\FocusLock\`:
 | `focus.json` | All lists and settings. Edit freely; applies to the next session |
 | `focuslock.log` | What got blocked and why, Jev answers, restarts |
 | `state.json` | Current session: end time, boot time, task, this session's extra sites and apps, accepted explanations |
+| `eval-cases.jsonl` | Test cases from `judge-eval make`, for you to label |
 | `last-session.json` | Your last answers in the start window, to pre-fill the next one |
 | `focuslock-guard.exe`, `focuslock-worker.exe` | Copies of the exe that run the session |
 
@@ -202,8 +229,9 @@ taskkill /f /im focuslock-guard.exe /im focuslock-worker.exe
 - `ui_windows.go`: AppBar, overlay, and the 500ms monitor loop
 - `classify.go`: URL/title/process rules, caching, verdicts (portable, tested)
 - `judge.go`: what a judge is asked and answers, plus the judge registry (portable, tested)
-- `judge_jev.go`, `judge_openai.go`, `judge_copilot.go`: one file per judge. Each registers itself with `registerJudge`; a new judge is one new file
-- `judge_check.go`: `focuslock judge-check`
+- `judge_jev.go`, `judge_openai.go`, `judge_copilot.go`, `judge_jevos.go`: one file per judge. Each registers itself with `registerJudge`; a new judge is one new file
+- `judge_jevos.go`, `jevos_windows.go`: the jevos judge, and starting/restarting `jev.exe` for a session
+- `judge_check.go`, `judge_eval.go`: `focuslock judge-check` and `judge-eval`
 - `explain.go`: explaining blocks, session notes (portable, tested)
 - `ration.go`: check windows for email and chat (portable, tested)
 - `session_setup.go`, `setup_windows.go`: the start window, and this session's extra sites and apps

@@ -117,6 +117,11 @@ func (c *Classifier) Classify(proc, title, rawURL string) Verdict {
 		return v
 	}
 	if t, ok := c.failedAt[key]; ok && time.Since(t) < 30*time.Second {
+		if strictSite {
+			// The judge isn't answering (jevos stopped, no network...). On
+			// strict sites unsure means blocked, so a dead judge isn't a way in.
+			return Verdict{Cat: CatEntertainment, Source: "unjudged", Prob: 1}
+		}
 		return Verdict{Cat: CatAllow, Source: "fallback"}
 	}
 	if c.inflight[key] {
@@ -295,6 +300,7 @@ func (c *Classifier) byURL(proc, rawURL, host, path string) (Verdict, bool) {
 		cat      Category
 	}{
 		{c.cfg.AllowDomains, CatAllow},
+		{c.cfg.SearchDomains, CatAllow},
 		{c.cfg.MusicDomains, CatMusic},
 		{c.cfg.BlockDomains, CatEntertainment},
 	}
@@ -395,7 +401,7 @@ func (c *Classifier) ask(key string, q Question, strict bool) {
 	a, err := c.judge.Ask(ctx, q)
 	var v Verdict
 	if err == nil {
-		v = decide(a, c.cfg.Judge.Threshold, c.cfg.Judge.MusicThreshold, strict)
+		v = judgeVerdict(c.judge, a, strict, c.cfg.Judge)
 		v.Source = c.judge.Name()
 	}
 	c.mu.Lock()

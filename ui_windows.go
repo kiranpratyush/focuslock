@@ -498,6 +498,9 @@ func blockView(b blockedWindow, musicOver bool) overlayView {
 	case v.Source == "rule":
 		view.Kicker = "ON YOUR BLOCK LIST"
 		view.Why = "The title matches a keyword in blockTitleKeywords in focus.json."
+	case v.Source == "unjudged":
+		view.Kicker = "THE JUDGE ISN'T ANSWERING"
+		view.Why = "Pages on this site stay covered until it's back. Other sites are allowed meanwhile."
 	case v.Source == "placeholder":
 		view.Kicker = "HOME PAGES AND FEEDS ARE BLOCKED"
 		view.Why = "Open a specific page instead. Pages on this site are checked one by one."
