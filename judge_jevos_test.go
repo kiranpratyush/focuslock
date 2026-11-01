@@ -189,3 +189,24 @@ func TestDeadJudgeKeepsStrictSitesCovered(t *testing.T) {
 
 // shortJudge drops the judge's own long timeout so the test is quick.
 type shortJudge struct{ Judge }
+
+func TestJevosLeavesSessionNotesOut(t *testing.T) {
+	// From a real session: once the ngrok note was in every question,
+	// system-design pages passed as "about the task".
+	f := &fakeJevos{ready: true, answers: map[string]float64{"topic": 0.2, "tool": 0.1, "fun": 0.1}}
+	c := jevosClassifier(t, f, goTask)
+	c.Restore([]SessionNote{{Scope: "site:ngrok.com", Label: "ngrok.com", Reason: "i am going to build nggrok so exploring this page"}}, 1)
+	v := waitVerdict(t, c, "brave.exe", "System Design Tutorial - GeeksforGeeks - Brave", "https://www.geeksforgeeks.org/system-design/system-design-tutorial/")
+	if v.Cat != CatOffTask {
+		t.Errorf("got %+v", v)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if strings.Contains(f.state, "ngrok") || strings.Contains(f.qs["topic"], "ngrok") {
+		t.Errorf("note leaked into the request: state %q, topic %q", f.state, f.qs["topic"])
+	}
+	// The explained site itself is still allowed.
+	if v := c.Classify("brave.exe", "HTTP tunnels | ngrok - Brave", "https://ngrok.com/docs/http"); v.Cat != CatAllow || v.Source != "explained" {
+		t.Errorf("explained site: got %+v", v)
+	}
+}

@@ -87,9 +87,11 @@ func jevosQuestions(q Question) (state string, qs map[string]string) {
 	if q.Page != "" {
 		b.WriteString("\nAddress: " + q.Page)
 	}
-	for _, n := range q.Notes {
-		b.WriteString("\nEarlier note: " + n)
-	}
+	// Session notes are left out. jevos reads them as part of the page: after
+	// "Allowed ngrok.com because: I'm building an ngrok clone", system-design
+	// pages went from 0.2 to 0.7 "about the task". In the question instead,
+	// they dragged real Go pages below 0.5. The explained site stays allowed
+	// by its scope either way.
 	qs = map[string]string{
 		jqFun: "Is this entertainment or social media: videos for fun, music videos, trailers, shows, sports, news, memes, shopping, or a social feed?",
 	}
