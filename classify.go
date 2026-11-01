@@ -82,7 +82,7 @@ func (c *Classifier) Classify(proc, title, rawURL string) Verdict {
 	if v, ok := c.byURL(proc, rawURL, host, path); ok {
 		return v
 	}
-	if v, ok := c.byRules(proc, title); ok {
+	if v, ok := c.byRules(proc, title, host != ""); ok {
 		return v
 	}
 	if isBrowser && strings.TrimSpace(rawURL) == "" && isBrowserPopup(title) {
@@ -355,7 +355,11 @@ func matchDomain(pattern, host, path string) bool {
 	return pPath == "" || strings.HasPrefix(strings.ToLower(path), pPath)
 }
 
-func (c *Classifier) byRules(proc, title string) (Verdict, bool) {
+// urlKnown: a browser tab whose web address was read. Its allowed sites are
+// decided by allowDomains, so allowTitleKeywords don't apply: "docs" or
+// "claude" in a title would otherwise wave through any page, like a YouTube
+// video called "Claude vs ChatGPT — funniest moments".
+func (c *Classifier) byRules(proc, title string, urlKnown bool) (Verdict, bool) {
 	t := strings.ToLower(title)
 	isBrowser := contains(c.cfg.Browsers, proc)
 
@@ -374,7 +378,7 @@ func (c *Classifier) byRules(proc, title string) (Verdict, bool) {
 		return Verdict{}, false
 	}
 	for _, k := range c.cfg.AllowTitleKeywords {
-		if strings.Contains(t, k) {
+		if !urlKnown && strings.Contains(t, k) {
 			return Verdict{Cat: CatAllow, Source: "rule", Prob: 1}, true
 		}
 	}

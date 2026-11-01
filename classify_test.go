@@ -622,3 +622,29 @@ func TestSettleWithTwoMonitors(t *testing.T) {
 		t.Fatalf("got %+v after %d calls", v, calls.Load())
 	}
 }
+
+func TestAllowTitleKeywordsOnlyWithoutURL(t *testing.T) {
+	_, mk := fakeJudge(t, map[string]float64{"entertainment": 0.95, "learning": 0.05})
+	c := mk("")
+	const title = "Claude vs ChatGPT — funniest moments - YouTube - Brave"
+	// URL read: the keywords "claude"/"chatgpt" no longer wave it through.
+	if v := waitVerdict(t, c, "brave.exe", title, "https://www.youtube.com/watch?v=x"); v.Cat != CatEntertainment || v.Source != "jev" {
+		t.Errorf("with URL: got %+v", v)
+	}
+	// Same for "docs" on any site.
+	if v := c.Classify("brave.exe", "Celebrity gossip docs - Brave", "https://gossip.example.com/docs"); v.Source == "rule" {
+		t.Errorf("'docs' keyword still allowed a known URL: %+v", v)
+	}
+	// Allowed sites still pass, by domain.
+	if v := c.Classify("brave.exe", "golang/go: The Go programming language - GitHub - Brave", "https://github.com/golang/go"); v.Cat != CatAllow || v.Source != "url" {
+		t.Errorf("github: got %+v", v)
+	}
+	// URL unknown (a browser FocusLock can't read): keywords still work.
+	if v := c.Classify("firefox.exe", "golang/go - GitHub — Mozilla Firefox", ""); v.Cat != CatAllow || v.Source != "rule" {
+		t.Errorf("no URL: got %+v", v)
+	}
+	// Block keywords still apply with a URL.
+	if v := c.Classify("brave.exe", "Reels - Watch - Brave", "https://example.com/r"); v.Cat != CatEntertainment || v.Source != "rule" {
+		t.Errorf("block keyword: got %+v", v)
+	}
+}

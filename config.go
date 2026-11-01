@@ -23,9 +23,11 @@ type Config struct {
 	// Distraction sites the judge must clear: a tab here is allowed only when
 	// the judge is sure it's work or learning, and placeholder titles
 	// ("YouTube", a bare URL) are blocked without asking.
-	StrictDomains      []string    `json:"strictDomains"`
-	BlockedProcesses   []string    `json:"blockedProcesses"`
-	MusicProcesses     []string    `json:"musicProcesses"`
+	StrictDomains    []string `json:"strictDomains"`
+	BlockedProcesses []string `json:"blockedProcesses"`
+	MusicProcesses   []string `json:"musicProcesses"`
+	// Title keywords that allow a tab. Only used when the tab's web address
+	// can't be read; otherwise allowDomains decides.
 	AllowTitleKeywords []string    `json:"allowTitleKeywords"`
 	BlockTitleKeywords []string    `json:"blockTitleKeywords"`
 	MusicTitleKeywords []string    `json:"musicTitleKeywords"`

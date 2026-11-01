@@ -137,7 +137,7 @@ How it judges: jevos speaks Jev's API but needs different questions. Tested on 8
 1. **URL rules** (browsers): `allowDomains`, then `searchDomains`, then `musicDomains`, then `blockDomains`.
    - **Web search results pages are always allowed** (`searchDomains`: DuckDuckGo, Google, Bing...). The page you open from them is judged. YouTube's results page isn't on the list, because it's a wall of videos. `youtube.com` matches `m.youtube.com` too; `youtube.com/shorts` matches only that path. Browser pages like `chrome://settings` are allowed.
 2. Process lists: `blockedProcesses` -> killed, `musicProcesses` -> music. Other non-browser apps are allowed.
-3. Browser title keywords, in order: `allowTitleKeywords`, then `musicTitleKeywords`, then `blockTitleKeywords`.
+3. Browser title keywords, in order: `allowTitleKeywords`, then `musicTitleKeywords`, then `blockTitleKeywords`. `allowTitleKeywords` only count when the tab's address can't be read; otherwise `allowDomains` decides, so "docs" or "claude" in a YouTube title doesn't wave the video through.
 4. **Strict sites** (`strictDomains`: youtube.com, x.com, twitter.com, reddit.com). These apply only when a judge is set:
    - A title that names only the site, like `YouTube - Brave`, `Home / X`, or a bare URL, is blocked without asking the judge. Browsers show these while a page loads, and on home or feed pages.
    - A page here is allowed only if the judge is at least `threshold` sure it's work or learning (or, with a task, on task). Unsure means **blocked** here, so a coin-flip "learning 0.55" on YouTube no longer passes.
