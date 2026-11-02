@@ -12,6 +12,10 @@ A Windows focus timer you can't casually stop. While a session runs it:
 
 The only ways out are the timer ending or restarting the PC.
 
+[![FocusLock: start a session, then a distracting tab gets covered and closed](docs/focuslock-demo.gif)](docs/focuslock-promo.mp4)
+
+[Watch the 50-second promo (MP4)](docs/focuslock-promo.mp4)
+
 ## Build
 
 Needs Go 1.24+ on Windows. One dependency: the GitHub Copilot SDK, for the `"copilot"` judge.
