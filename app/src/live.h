@@ -4,6 +4,7 @@
 #include <QLocalSocket>
 #include <QObject>
 #include <QTimer>
+#include <QVariantList>
 #include <QVariantMap>
 
 // The engine's frames, read from its socket (JSON lines), and the
@@ -15,6 +16,7 @@ class Live : public QObject {
     Q_PROPERTY(QString barText READ barText NOTIFY changed)
     Q_PROPERTY(bool overlayShown READ overlayShown NOTIFY changed)
     Q_PROPERTY(QVariantMap overlay READ overlay NOTIFY changed)
+    Q_PROPERTY(QVariantList sides READ sides NOTIFY changed)
     Q_PROPERTY(int blockId READ blockId NOTIFY blockIdChanged)
     Q_PROPERTY(bool explainBusy READ explainBusy NOTIFY changed)
     Q_PROPERTY(QString explainStatus READ explainStatus NOTIFY changed)
@@ -30,6 +32,8 @@ public:
     QString barText() const { return m_bar; }
     bool overlayShown() const { return !m_overlay.isEmpty(); }
     QVariantMap overlay() const { return m_overlay; }
+    // Blocked windows on other monitors: no explanation box there.
+    QVariantList sides() const { return m_sides; }
     int blockId() const { return m_overlay.value("blockId").toInt(); }
     bool explainBusy() const { return m_explainBusy; }
     QString explainStatus() const { return m_explainStatus; }
@@ -47,7 +51,6 @@ public:
 signals:
     void changed();
     void blockIdChanged();
-    void placementChanged(const QString &monitor, int x, int y, int w, int h, bool shown);
     // An explanation was accepted: the block is gone.
     void released();
     void finished();
@@ -61,7 +64,8 @@ private:
     QTimer m_clock, m_reconnect;
     QByteArray m_buffer;
     qint64 m_endUnix = 0, m_now = 0, m_lastFrame = 0;
-    QString m_bar, m_placement, m_explainStatus;
+    QString m_bar, m_explainStatus;
     QVariantMap m_overlay;
+    QVariantList m_sides;
     bool m_explainBusy = false, m_typing = false, m_finished = false;
 };

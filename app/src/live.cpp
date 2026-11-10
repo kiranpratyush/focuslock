@@ -1,6 +1,7 @@
 #include "live.h"
 
 #include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 
 Live::Live(const QString &path, QObject *parent) : QObject(parent), m_path(path) {
@@ -23,7 +24,7 @@ Live::Live(const QString &path, QObject *parent) : QObject(parent), m_path(path)
     m_clock.setInterval(250);
     connect(&m_clock, &QTimer::timeout, this, [this] { tick(QDateTime::currentSecsSinceEpoch()); });
 
-    // Started by the caller's event loop, once placementChanged is connected.
+    // Connects from the event loop, once QML is loaded.
     if (!path.isEmpty()) {
         m_lastFrame = QDateTime::currentSecsSinceEpoch();
         m_clock.start();
@@ -67,6 +68,7 @@ void Live::applyFrame(const QJsonObject &o, qint64 now) {
     m_bar = o.value("bar").toString();
     const int oldBlock = blockId();
     m_overlay = o.value("overlay").toObject().toVariantMap();
+    m_sides = o.value("side").toArray().toVariantList();
     const auto explain = o.value("explain").toObject();
     m_explainBusy = explain.value("busy").toBool();
     m_explainStatus = explain.value("status").toString();
@@ -77,15 +79,6 @@ void Live::applyFrame(const QJsonObject &o, qint64 now) {
     if (blockId() != oldBlock)
         emit blockIdChanged();
 
-    const QString placement = m_overlay.isEmpty() ? QString()
-        : QString("%1 %2 %3 %4 %5").arg(m_overlay.value("monitor").toString()).arg(m_overlay.value("x").toInt())
-              .arg(m_overlay.value("y").toInt()).arg(m_overlay.value("w").toInt()).arg(m_overlay.value("h").toInt());
-    if (placement != m_placement) {
-        m_placement = placement;
-        emit placementChanged(m_overlay.value("monitor").toString(), m_overlay.value("x").toInt(),
-                              m_overlay.value("y").toInt(), m_overlay.value("w").toInt(),
-                              m_overlay.value("h").toInt(), !m_overlay.isEmpty());
-    }
     if (o.value("done").toBool())
         m_endUnix = qMin(m_endUnix, now);
     tick(now);
@@ -96,8 +89,8 @@ void Live::tick(qint64 now) {
     if (!m_finished && m_endUnix > 0 && now >= m_endUnix) {
         m_finished = true;
         m_overlay.clear();
+        m_sides.clear();
         emit changed();
-        emit placementChanged({}, 0, 0, 0, 0, false);
         emit finished();
         return;
     }

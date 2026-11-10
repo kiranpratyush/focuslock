@@ -174,9 +174,12 @@ func copyExe(src, dst string) error {
 	return os.Rename(tmp, dst)
 }
 
-func syscallExec(path string) error {
-	return syscall.Exec(path, []string{path}, os.Environ())
+// openUI replaces this process with the app's start window.
+func openUI(path string) error {
+	return syscall.Exec(path, []string{path, "open"}, os.Environ())
 }
+
+func lookPath(name string) (string, error) { return exec.LookPath(name) }
 
 func printJSON(v any) {
 	b, _ := json.Marshal(v)

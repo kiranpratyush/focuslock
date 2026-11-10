@@ -61,15 +61,8 @@ func runWorker(dir string, peer uint32) {
 	cls := classify.New(cfg, s.Intent)
 	cls.SetTaskDetail(s.TaskDetail)
 	cls.Restore(s.Notes, s.ExplainUsed)
-	save := func() {
-		st := s
-		st.Notes, st.ExplainUsed = cls.SessionNotes()
-		if err := session.Write(dir, st); err != nil {
-			logx.Printf("save explanations: %v", err)
-		}
-	}
 	stopJevos := superviseJevos(cfg, true)
-	runUI(cfg, s, cls, save)
+	runUI(dir, cfg, s, cls)
 	stopJevos()
 	_ = os.Remove(session.Path(dir))
 	logx.Printf("worker exiting: session over")
@@ -124,7 +117,7 @@ func peerArg(args []string) uint32 {
 	return 0
 }
 
-func copyFile(src, dst string) error {
+func copyExe(src, dst string) error {
 	if strings.EqualFold(src, dst) {
 		return nil
 	}

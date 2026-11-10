@@ -7,9 +7,26 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
+// The engine is a console program; on Windows, don't flash a console
+// window each time the app runs it.
+static void hideConsole(QProcess &process) {
+#ifdef Q_OS_WIN
+    process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
+        args->flags |= CREATE_NO_WINDOW;
+    });
+#else
+    Q_UNUSED(process);
+#endif
+}
+
 Backend::Backend(const QString &engine, QObject *parent)
     : QObject(parent), m_engine(engine.isEmpty() ? findEngine() : engine) {
     m_process.setProcessChannelMode(QProcess::MergedChannels);
+    hideConsole(m_process);
     connect(&m_process, &QProcess::readyRead, this, [this] {
         m_output += QString::fromUtf8(m_process.readAll());
         emit changed();
@@ -45,11 +62,28 @@ Backend::Backend(const QString &engine, QObject *parent)
 
 bool Backend::engineFound() const { return !m_engine.isEmpty() && QFileInfo(m_engine).isExecutable(); }
 
+// The directory this program runs from. Works before QCoreApplication
+// exists, which the command-line forwarding needs.
+static QString programDirectory() {
+#ifdef Q_OS_WIN
+    wchar_t path[MAX_PATH];
+    const DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    return QFileInfo(QString::fromWCharArray(path, int(n))).absolutePath();
+#else
+    return QFileInfo(QStringLiteral("/proc/self/exe")).canonicalFilePath().section('/', 0, -2);
+#endif
+}
+
 QString Backend::findEngine() {
     const QString env = qEnvironmentVariable("FOCUSLOCK_ENGINE");
     if (!env.isEmpty())
         return env;
-    for (const QString &path : {QStringLiteral("/usr/lib/focuslock/focuslock-engine")})
+#ifdef Q_OS_WIN
+    const QStringList candidates{programDirectory() + "/focuslock-engine.exe"};
+#else
+    const QStringList candidates{programDirectory() + "/focuslock-engine", QStringLiteral("/usr/lib/focuslock/focuslock-engine")};
+#endif
+    for (const QString &path : candidates)
         if (QFileInfo(path).isExecutable())
             return path;
     return QStandardPaths::findExecutable("focuslock-engine");
@@ -73,6 +107,7 @@ QByteArray Backend::runEngine(const QStringList &args) {
     if (m_engine.isEmpty())
         return {};
     QProcess p;
+    hideConsole(p);
     p.start(m_engine, args);
     if (!p.waitForFinished(3000))
         return {};

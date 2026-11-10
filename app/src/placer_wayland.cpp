@@ -1,13 +1,17 @@
-#include "layer.h"
+#include "placer.h"
 
 #include <LayerShellQt/window.h>
 #include <QGuiApplication>
+#include <QProcess>
 #include <QScreen>
 #include <QWindow>
+#include <signal.h>
 
 using LayerShellQt::Window;
 
-void Layer::makeBar(QWindow *window, int height) {
+Placer::~Placer() = default;
+
+void Placer::setupBar(QWindow *window, int height) {
     auto *layer = Window::get(window);
     layer->setScope("focuslock-bar");
     layer->setLayer(Window::LayerTop);
@@ -17,9 +21,10 @@ void Layer::makeBar(QWindow *window, int height) {
     layer->setWantsToBeOnActiveScreen(true);
     window->setHeight(height);
     window->show();
+    m_bar = window;
 }
 
-void Layer::makeOverlay(QWindow *window) {
+void Placer::setupOverlay(QWindow *window) {
     auto *layer = Window::get(window);
     layer->setScope("focuslock-overlay");
     layer->setLayer(Window::LayerOverlay);
@@ -31,18 +36,20 @@ void Layer::makeOverlay(QWindow *window) {
     layer->setActivateOnShow(false);
 }
 
-void Layer::place(QWindow *window, const QString &monitor, int x, int y, int w, int h, bool shown) {
-    if (!shown || w <= 0 || h <= 0) {
-        window->hide();
+void Placer::place(QWindow *window, const QVariantMap &o) {
+    const int x = o.value("x").toInt(), y = o.value("y").toInt(), w = o.value("w").toInt(), h = o.value("h").toInt();
+    if (!window || o.isEmpty() || w <= 0 || h <= 0) {
+        if (window)
+            window->hide();
         return;
     }
     QScreen *screen = nullptr;
     for (QScreen *s : QGuiApplication::screens())
-        if (s->name() == monitor)
+        if (s->name() == o.value("monitor").toString())
             screen = s;
-    // A layer surface is bound to its output when it's created, so moving to
-    // another monitor means hiding and showing it again.
     auto *layer = Window::get(window);
+    // A layer surface is bound to its output when it's created, so moving
+    // to another monitor means hiding and showing it again.
     if (screen && window->screen() != screen) {
         window->hide();
         window->setScreen(screen);
@@ -52,4 +59,16 @@ void Layer::place(QWindow *window, const QString &monitor, int x, int y, int w, 
     layer->setDesiredSize(QSize(w, h));
     window->resize(w, h);
     window->show();
+}
+
+// Layer surfaces stay above windows by themselves.
+void Placer::keepOnTop(QWindow *) {}
+
+void Placer::activate(const QString &windowId) {
+    if (!windowId.isEmpty())
+        QProcess::startDetached("hyprctl", {"dispatch", "focuswindow", "address:" + windowId});
+}
+
+bool Placer::processAlive(qint64 pid) {
+    return pid > 0 && ::kill(pid_t(pid), 0) == 0;
 }

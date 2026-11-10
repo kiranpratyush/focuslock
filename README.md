@@ -1,6 +1,6 @@
 # FocusLock v1
 
-A Windows focus timer you can't casually stop. While a session runs it:
+A focus timer for Windows and Linux (Hyprland) you can't casually stop. While a session runs it:
 
 - shows a countdown bar across the top of the screen (an AppBar, so windows can't cover it)
 - covers browser tabs that look like entertainment with a dark overlay; if you stay on that tab, it closes it with Ctrl+W after 2 minutes
@@ -16,36 +16,44 @@ The only ways out are the timer ending or restarting the PC.
 
 [Watch the 50-second promo (MP4)](docs/focuslock-promo.mp4)
 
-## Build
+## How it's built
 
-Needs Go 1.24+ on Windows. One dependency: the GitHub Copilot SDK, for the `"copilot"` judge.
+Two programs, the same on Windows and Linux:
+
+- **`focuslock-engine`** (Go, `cmd/focuslock` + `internal/`): starts sessions, judges windows, blocks. Its loop is `internal/engine`, the same on every OS; a small platform layer reads windows and closes tabs (Win32 + UI Automation on Windows, `hyprctl` + `/proc` on Hyprland).
+- **`focuslock`** (Qt Quick, `app/`): the start window, the countdown bar, and the block screens, including the box for explaining why you need a page. On Windows the bar is an AppBar and block screens are topmost windows; on Wayland they're layer-shell surfaces.
+
+The engine's worker starts the app's bar and talks to it over a private local socket (a named pipe on Windows, `$XDG_RUNTIME_DIR/focuslock-engine.sock` on Linux): a frame twice a second out, explanations back. `focuslock status`, `focuslock config` and the other commands are passed through to the engine.
+
+## Windows
+
+Needs Go 1.24+, Qt 6 for MSVC (its `bin` on PATH), and a Visual Studio developer PowerShell.
 
 ```
-go build -ldflags "-s -w" -o focuslock.exe ./cmd/focuslock
+app\bin\build.ps1      # engine + app + Qt libraries into app\dist
+app\bin\test.ps1       # Go tests + Qt tests
+app\bin\install.ps1    # into %LOCALAPPDATA%\Programs\FocusLock, a Start menu entry, and PATH
 ```
 
-The exe isn't in the repo; build it as above (from WSL: `GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o focuslock.exe ./cmd/focuslock`).
+Every push also builds it on GitHub Actions (`.github/workflows/build.yml`); the `focuslock-windows` artifact is a ready `dist` folder. On Windows, use `focuslock-engine` for commands whose output you want to read in a terminal, since `focuslock` is a windowed program.
 
 ## Linux (Omarchy / Hyprland)
 
-FocusLock also runs on Linux under Hyprland. The same engine (`internal/engine`, built as `focuslock-engine`) judges and blocks on every OS; a small Qt Quick app, `focuslock`, asks for the session and draws the countdown bar and block screen as layer-shell surfaces, following the Omarchy theme. The two talk over a private socket (`$XDG_RUNTIME_DIR/focuslock-engine.sock`, JSON lines): frames go to the app twice a second, and what you type in the block screen's explanation box comes back.
-
 ```
-cd linux
-bin/build        # Go engine + Qt app into linux/build/
+cd app
+bin/build        # Go engine + Qt app into app/build/
 bin/test         # Go tests + Qt tests (offscreen)
 bin/install      # makepkg -fsi: installs it, so FocusLock shows up in the app launcher
 ```
 
-Needs Go 1.24+, `qt6-base`, `qt6-declarative`, `qt6-wayland`, and `layer-shell-qt`.
-
-Open **FocusLock** from the launcher (Super + Space), or use the command line: `focuslock status`, `focuslock start 50m "task"`, `focuslock config`, `focuslock judge-check`. These are passed through to `focuslock-engine`. `focus.json` lives in `~/.config/FocusLock/`, and its Windows process names (`steam.exe`) also match their Linux names (`steam`).
+Needs Go 1.24+, `qt6-base`, `qt6-declarative`, `qt6-wayland`, and `layer-shell-qt`. Open **FocusLock** from the launcher (Super + Space). `focus.json` lives in `~/.config/FocusLock/`, and its Windows process names (`steam.exe`) also match their Linux names (`steam`).
 
 How it differs from Windows:
 - Tabs are judged by **window title**, since Linux has no UI Automation to read the address bar. `allowTitleKeywords` applies, as it does when a URL can't be read.
 - Blocked tabs are closed with `hyprctl dispatch sendshortcut CTRL, W`, and blocked apps get SIGTERM.
-- Click the block screen to type an explanation (the browser keeps the keyboard until then); typing pauses the tab's countdown, as on Windows.
 - Not ported yet: the planning cue and `startup`, covering windows on your other monitors, and the `jevos` supervisor.
+
+Click a block screen to type an explanation (the covered window keeps the keyboard until then); typing pauses the tab's countdown.
 
 | Key (start window) | Action |
 |---|---|
@@ -274,7 +282,7 @@ Everything lives in `%LOCALAPPDATA%\FocusLock\`:
 
 ## Why it's annoying to kill
 
-`start` launches two processes under different names. The **worker** does the blocking and draws the windows. The **guard** has no window. Each one waits on the other and restarts it within about half a second if it dies. Killing `focuslock.exe` by name does nothing, and Task Manager is too slow to kill both.
+`start` launches two processes under different names. The **worker** does the blocking and runs the app's bar and block screens. The **guard** has no window. Each one waits on the other and restarts it within about half a second if it dies. Killing `focuslock.exe` by name does nothing, and Task Manager is too slow to kill both.
 
 **Emergency exit** (if something misbehaves): restart the PC, or run in one command:
 ```
@@ -291,10 +299,11 @@ taskkill /f /im focuslock-guard.exe /im focuslock-worker.exe
 
 ## Architecture
 
-FocusLock is split into packages by job. Everything that decides what's allowed is portable Go under `internal/`, built and tested on any OS. Only `cmd/focuslock` touches Windows.
+FocusLock is split into packages by job. Everything that decides what's allowed is portable Go under `internal/`, built and tested on any OS. Only `cmd/focuslock` touches an OS, and only `app/` draws.
 
 ```
-cmd/focuslock          the Windows app (package main)
+cmd/focuslock          the engine (package main): CLI, guard/worker, platform layer
+  ├─ internal/engine     the monitor loop: what to block, kill, close; returns a Frame to draw
   ├─ internal/classify   decides each window: rules → explanations → judge
   │    └─ internal/judge   asks a judge (Jev, OpenAI-compatible, Copilot, jevos)
   ├─ internal/config     focus.json, and the start window's per-session setup
@@ -302,37 +311,38 @@ cmd/focuslock          the Windows app (package main)
   ├─ internal/cue        when to remind you to plan a session
   └─ internal/particles  the cue's falling sparks (per-pixel drawing)
 internal/logx, internal/textutil   logging and two tiny string helpers, used by all
+app/                   the Qt app: start window, bar, block screens (Windows and Wayland)
 ```
 
-Imports only point downward: `cmd` → `classify` → `judge` → `config`. Nothing in `internal/` imports the Windows code, so every decision can be tested without Windows. Each package starts with a `doc.go` that explains it; `go doc ./internal/classify` prints it.
+Imports only point downward: `cmd` → `engine` → `classify` → `judge` → `config`. Nothing in `internal/` imports OS code, so every decision is tested on any OS (`internal/engine` uses a fake platform). Each package starts with a `doc.go` that explains it; `go doc ./internal/engine` prints it.
 
 **Following one tab through the code:**
-1. Every 500 ms, `tick()` (`cmd/focuslock/ui_windows.go`) finds the window in front and reads its URL from the address bar (`uia_windows.go`).
+1. Every 500 ms the worker's loop (`cmd/focuslock/frontend.go`) calls `engine.Tick`. The engine asks the platform for the window in front (`ui_windows.go`: Win32, plus the URL from the address bar via `uia_windows.go`; `ui_linux.go`: `hyprctl`).
 2. It asks `classify.Classifier.Classify` (`internal/classify/classify.go`). Cheap rules go first (`rules.go`, `urls.go`, `titles.go`), then any explanations you gave (`explain.go`). Only then does it ask the judge.
 3. The judge (`internal/judge`) gets a `Question` and returns an `Answer`. `Decide` (`verdict.go`) turns that into a `Verdict`: allow, block, or music. Each judge is one file that registers itself by name.
-4. Back in `tick()`, a block becomes the overlay (`blockscreen_windows.go`). After the countdown, the tab gets Ctrl+W; a blocked app gets killed.
-5. The same check runs for the front window on each other monitor (`monitors_windows.go`).
+4. Back in the engine (`internal/engine/engine.go`), a block becomes an `Overlay` in the frame. After the countdown, the tab gets Ctrl+W; a blocked app gets killed. The same check runs for the front window on each other monitor.
+5. The frame goes to the app over the socket (`server.go`), which places and draws the block screens (`app/src/Bar.qml`, `BlockCard.qml`, `placer_*.cpp`).
 
 **Where to start reading:**
-- `internal/judge/judge.go`: the `Judge` interface. Every judge implements just two methods, `Name` and `Ask`.
+- `internal/engine/engine.go`: `Tick`, where it all comes together.
 - `internal/classify/classify.go`: `Classify`, the decision pipeline in one function.
-- `cmd/focuslock/ui_windows.go`: `tick()`, where it all comes together.
+- `internal/judge/judge.go`: the `Judge` interface. Every judge implements just two methods, `Name` and `Ask`.
 
 ## Code map
 
 | Package | Files | What's there |
 |---|---|---|
-| `cmd/focuslock` | `main_windows.go` | commands: start, status, config, judge-check, judge-eval |
-| | `worker_windows.go` | the guard and worker that restart each other |
-| | `setup_windows.go` | the start window |
-| | `ui_windows.go` | the 500 ms monitor loop and the top bar |
-| | `blockscreen_windows.go` | the overlay: what it says, the explain box, drawing |
-| | `monitors_windows.go` | checking the front window on other monitors |
+| `cmd/focuslock` | `main_windows.go`, `main_linux.go`, `start.go` | commands: start, status, config, judge-check, judge-eval |
+| | `worker_windows.go`, `worker_linux.go` | the guard and worker that restart each other |
+| | `frontend.go`, `server.go` | the worker's loop: engine frames out to the app, explanations back |
+| | `ui_windows.go` | the Windows platform: front windows, other monitors, where block screens go |
+| | `ui_linux.go`, `hypr_linux.go` | the Hyprland platform: `hyprctl` and `/proc` |
 | | `uia_windows.go` | reading the address bar with UI Automation (COM) |
 | | `jevos_windows.go` | starting and restarting `jev.exe` for a session |
-| | `cue_windows.go` | the reminder: breathing line and sliding pill |
+| | `cue_windows.go`, `gdi_windows.go` | the reminder: breathing line and sliding pill |
 | | `startup_windows.go` | `startup on/off`: the per-user Run entry in the registry |
-| | `winapi_windows.go` | Win32 calls through `syscall`, no dependencies |
+| | `winapi_windows.go` | Win32 calls through `syscall` |
+| `internal/engine` | `engine.go`, `view.go` | the monitor loop, explanations, other monitors; what a block screen says |
 | `internal/classify` | `classify.go` | the decision pipeline, settle delay, cache |
 | | `rules.go`, `urls.go`, `titles.go` | domain, process and title rules; strict sites; placeholder titles; pop-ups |
 | | `explain.go` | explaining a block; session notes |
@@ -345,8 +355,12 @@ Imports only point downward: `cmd` → `classify` → `judge` → `config`. Noth
 | | `describe.go` | spelling out your task at session start |
 | | `check.go` | `judge-check` |
 | `internal/config` | `config.go`, `setup.go` | focus.json; the start window's per-session setup |
-| `internal/session` | `state.go`, `boottime_*.go` | state.json; when Windows booted |
+| `internal/session` | `state.go`, `boottime_*.go` | state.json; when the computer booted |
 | `internal/cue` | `cue.go` | when to remind you to plan (a plain function, tested) |
 | `internal/particles` | `particles.go` | the cue's falling sparks: simulation and per-pixel drawing (tested) |
+| `app/src` | `main.cpp`, `backend.*` | the Qt app; the start window's side (runs the engine) |
+| | `live.*` | frames from the engine's socket, explanations back |
+| | `placer_windows.cpp`, `placer_wayland.cpp` | where the bar and block screens go, per OS |
+| | `Main.qml`, `Bar.qml`, `BlockCard.qml` | the start window, the bar, a block screen |
 
 Tests sit next to the code they test (`*_test.go`): `go test ./...`

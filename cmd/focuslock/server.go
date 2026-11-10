@@ -1,4 +1,4 @@
-//go:build linux
+//go:build windows || linux
 
 package main
 
@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"net"
-	"os"
 	"sync"
 
 	"focuslock/internal/logx"
@@ -32,12 +31,10 @@ type frameServer struct {
 	last    []byte
 }
 
-// listenFrames serves path, a Unix socket only this user can open.
-func listenFrames(path string) (*frameServer, error) {
-	_ = os.Remove(path)
-	old := umask(0o077)
-	ln, err := net.Listen("unix", path)
-	umask(old)
+// listenFrames serves addr, a socket (Linux) or named pipe (Windows) only
+// this user can open.
+func listenFrames(addr string) (*frameServer, error) {
+	ln, err := listenLocal(addr)
 	if err != nil {
 		return nil, err
 	}

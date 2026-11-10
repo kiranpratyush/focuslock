@@ -43,27 +43,28 @@ private slots:
         QCOMPARE(Live::formatRemaining(-3), QString("00:00"));
     }
 
-    void liveAppliesFramesAndPlacement()
+    void liveAppliesFrames()
     {
         Live live({});
-        QSignalSpy placed(&live, &Live::placementChanged);
         QSignalSpy block(&live, &Live::blockIdChanged);
         live.applyFrame(json(R"({"type":"frame","endUnix":2000,"bar":"ends 15:04",
-            "overlay":{"title":"x","explain":true,"blockId":3,"monitor":"DP-1","x":10,"y":20,"w":300,"h":200},
+            "overlay":{"title":"x","explain":true,"blockId":3,"windowId":"1a2b","monitor":"DP-1","x":10,"y":20,"w":300,"h":200},
+            "side":[{"title":"y","windowId":"3c","absolute":true,"x":1920,"y":0,"w":800,"h":600}],
             "explain":{"busy":true,"status":"Checking your reason…"}})"), 1000);
         QCOMPARE(live.barText(), QString("ends 15:04"));
         QCOMPARE(live.remaining(), QString("16:40"));
         QVERIFY(live.overlayShown());
+        QCOMPARE(live.overlay().value("windowId").toString(), QString("1a2b"));
+        QCOMPARE(live.overlay().value("w").toInt(), 300);
+        QCOMPARE(live.sides().size(), 1);
+        QCOMPARE(live.sides().first().toMap().value("absolute").toBool(), true);
         QCOMPARE(live.blockId(), 3);
         QCOMPARE(block.count(), 1);
         QVERIFY(live.explainBusy());
         QCOMPARE(live.explainStatus(), QString("Checking your reason…"));
-        QCOMPARE(placed.count(), 1);
-        QCOMPARE(placed.first().at(0).toString(), QString("DP-1"));
-        QCOMPARE(placed.first().at(3).toInt(), 300);
-        live.applyFrame(json(R"({"type":"frame","endUnix":2000,"overlay":{"blockId":3,"monitor":"DP-1","x":10,"y":20,"w":300,"h":200}})"), 1001);
-        QCOMPARE(placed.count(), 1); // unchanged placement isn't re-sent
+        live.applyFrame(json(R"({"type":"frame","endUnix":2000,"overlay":{"blockId":3}})"), 1001);
         QCOMPARE(block.count(), 1);
+        QVERIFY(live.sides().isEmpty());
         QVERIFY(!live.stale());
         live.tick(1010);
         QVERIFY(live.stale());
@@ -93,7 +94,12 @@ private slots:
     {
         // A fake engine: sends a frame, then reads what the box sends back.
         QTemporaryDir dir;
+#ifdef Q_OS_WIN
+        // A named pipe: a name, not a path.
+        const QString path = QString("focuslock-test-%1").arg(QCoreApplication::applicationPid());
+#else
         const QString path = dir.filePath("engine.sock");
+#endif
         QLocalServer server;
         QVERIFY(server.listen(path));
         Live live(path);
