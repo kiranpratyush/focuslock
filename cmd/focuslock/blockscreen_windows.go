@@ -3,227 +3,36 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"focuslock/internal/engine"
 	"strings"
 	"syscall"
 	"time"
 	"unsafe"
 
-	"focuslock/internal/classify"
 	"focuslock/internal/judge"
-	"focuslock/internal/logx"
-	"focuslock/internal/session"
-	"focuslock/internal/textutil"
 )
 
 // The block screen: what the overlay says about a blocked window, the
 // "why do you need this?" box, and drawing it all with plain Win32 GDI.
 
-// showRationBlock covers a rationed window between its check windows.
-// No countdown and no Ctrl+W: the page stays where you left it.
-func showRationBlock(fg uintptr, proc, title, tabURL, key, host string, isBrowser bool, st classify.RationStatus, now time.Time) {
-	if ui.blockedKey != key {
-		ui.blockedKey, ui.blockedSince, ui.blockedHost = key, now, host
-		ui.blocked = blockedWindow{hwnd: fg, proc: proc, title: title, url: tabURL, ration: st.Rule}
-		ui.blockCount++
-		ui.explainStatus = ""
-		pSetWindowTextW.Call(ui.edit, uintptr(unsafe.Pointer(u16(""))))
-		logx.Printf("rationed [%s, next %s, visit %d]: %s — %q %s", st.Rule.Name, st.NextAt.Format("15:04"), st.Visits, proc, title, tabURL)
-	}
-	ui.blocked.hwnd = fg
-	offset := appTitleBarPx
-	if isBrowser {
-		offset = ui.cfg.OverlayTopOffset
-	}
-	showOverlay(fg, rationView(ui.blocked, st), offset)
-}
-
 // ---------- the block screen ----------
-
-// overlayView is everything the block screen shows.
-type overlayView struct {
-	Accent  judge.Category
-	Kicker  string // "NOT PART OF YOUR TASK"
-	Title   string // the page or window
-	Where   string // "youtube.com · brave.exe"
-	Why     string // who decided, and how sure
-	Task    string
-	Explain bool   // show the "why do you need this?" box
-	Prompt  string // the line above the box
-	Footer  string
-	Stats   string
-}
-
-func blockView(b blockedWindow, musicOver bool) overlayView {
-	v := b.verdict
-	host, _ := classify.NormalizeURL(b.url)
-	view := overlayView{Accent: v.Cat, Title: classify.TrimBrowserSuffix(b.title)}
-	if view.Title == "" {
-		view.Title = b.proc
-	}
-	view.Where = b.proc
-	if host != "" {
-		view.Where = host + "  ·  " + b.proc
-	}
-
-	who := judgeDisplayName(v.Source)
-	switch {
-	case musicOver:
-		view.Kicker = "MUSIC IS FINE — IN THE BACKGROUND"
-		view.Why = fmt.Sprintf("Music can stay in front for %d seconds. It keeps playing if you switch away.", ui.cfg.Music.ForegroundGraceSeconds)
-	case v.Cat == judge.CatMusic:
-		view.Kicker = "MUSIC IS OFF THIS SESSION"
-		view.Why = `"music": {"allowed": false} in focus.json`
-	case v.Source == "url":
-		view.Kicker = "ON YOUR BLOCK LIST"
-		view.Why = host + " is in blockDomains in focus.json."
-	case v.Source == "rule":
-		view.Kicker = "ON YOUR BLOCK LIST"
-		view.Why = "The title matches a keyword in blockTitleKeywords in focus.json."
-	case v.Source == "unjudged":
-		view.Kicker = "THE JUDGE ISN'T ANSWERING"
-		view.Why = "Pages on this site stay covered until it's back. Other sites are allowed meanwhile."
-	case v.Source == "placeholder":
-		view.Kicker = "HOME PAGES AND FEEDS ARE BLOCKED"
-		view.Why = "Open a specific page instead. Pages on this site are checked one by one."
-	case v.Cat == judge.CatOffTask:
-		view.Kicker = "NOT PART OF YOUR TASK"
-		view.Why = fmt.Sprintf("%s judged this off-task, %.0f%% sure.", who, v.Prob*100)
-	default:
-		view.Kicker = "THIS LOOKS LIKE ENTERTAINMENT"
-		view.Why = fmt.Sprintf("%s judged this as entertainment, %.0f%% sure.", who, v.Prob*100)
-	}
-
-	view.Task, view.Stats = taskLine(), statsLine()
-	view.Explain = ui.cls.CanExplain(v)
-	view.Prompt = "Need this for your task? Say why — Enter to send, Esc to go back."
-	return view
-}
-
-func rationView(b blockedWindow, st classify.RationStatus) overlayView {
-	r := st.Rule
-	host, _ := classify.NormalizeURL(b.url)
-	view := overlayView{Accent: judge.CatMusic, Title: classify.TrimBrowserSuffix(b.title), Where: b.proc}
-	if host != "" {
-		view.Where = host + "  ·  " + b.proc
-	}
-	view.Kicker = strings.ToUpper(r.Name) + " IS RATIONED"
-	visits := fmt.Sprintf("You've gone to it %d times this session.", st.Visits)
-	if wait := time.Until(st.NextAt); wait > 0 {
-		view.Why = fmt.Sprintf("Next check at %s (in %d min). %s", st.NextAt.Format("15:04"), int(wait.Minutes())+1, visits)
-	} else {
-		view.Why = "A check is due: switch to it to start one. " + visits
-	}
-	view.Task, view.Stats = taskLine(), statsLine()
-	_, can := ui.cls.ExplainBudget()
-	view.Explain = can
-	view.Prompt = fmt.Sprintf("Need it now? Say why — Enter opens it for %d minutes, Esc goes back.", r.ForMinutes)
-	view.Footer = fmt.Sprintf("You get %d minutes every %d. Switch back to your task.", r.ForMinutes, r.EveryMinutes)
-	return view
-}
-
-func taskLine() string {
-	if t := ui.cls.Intent(); t != "" {
-		return "Your task: " + t
-	}
-	return "No task set — only entertainment is blocked."
-}
-
-func statsLine() string {
-	stats := fmt.Sprintf("%s of focus left  ·  %d blocked this session", session.FmtRemaining(ui.sess.Remaining()), ui.blockCount)
-	if ui.cfg.Explain.Enabled {
-		stats += fmt.Sprintf("  ·  %d of %d explanations left", ui.cls.ExplanationsLeft(), ui.cfg.Explain.MaxPerSession)
-	}
-	return stats
-}
-
-func judgeDisplayName(source string) string {
-	switch source {
-	case "jev":
-		return "Jev"
-	case "copilot":
-		return "Copilot"
-	case "llm":
-		return "The local model"
-	case "":
-		return "The judge"
-	}
-	return strings.ToUpper(source[:1]) + source[1:]
-}
 
 // ---------- explanations ----------
 
+// submitExplanation hands the box's text to the engine; the verdict comes
+// back in a later frame.
 func submitExplanation() {
-	if ui.explainBusy || !ui.view.Explain {
+	if ui.frame.Explain.Busy || !ui.view.Explain {
 		return
 	}
-	reason := strings.TrimSpace(windowTitle(ui.edit))
-	if len([]rune(reason)) < 10 {
-		ui.explainStatus = "Say a bit more: how does this help your task?"
-		pInvalidateRect.Call(ui.overlay, 0, 1)
-		return
-	}
-	if r := ui.blocked.ration; r != nil {
-		// Opening email or chat early needs a reason, not a verdict: the
-		// friction is the point, and it works without a judge.
-		if _, ok := ui.cls.SpendExplanation(); !ok {
-			ui.explainStatus = "No explanations left this session."
-			pInvalidateRect.Call(ui.overlay, 0, 1)
-			return
-		}
-		ui.rations.OpenEarly(r, reason)
-		ui.save()
-		event(fmt.Sprintf("%s open for %d min — %s", r.Name, r.ForMinutes, textutil.Shorten(reason, 40)))
-		pSetWindowTextW.Call(ui.edit, uintptr(unsafe.Pointer(u16(""))))
-		ui.explainStatus = ""
-		ui.blockedKey, ui.blockedHost = "", ""
-		hideOverlay()
-		backToBlockedWindow()
-		return
-	}
-	ui.explainBusy = true
-	ui.explainStatus = "Checking your reason…"
-	pEnableWindow.Call(ui.edit, 0)
-	pInvalidateRect.Call(ui.overlay, 0, 1)
-	b := ui.blocked
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		res, err := ui.cls.Explain(ctx, b.proc, b.title, b.url, reason)
-		ui.explainDone <- explainOutcome{res, err}
-	}()
-}
-
-// explainFinished runs on the UI thread when the judge has answered.
-func explainFinished(o explainOutcome) {
-	ui.explainBusy = false
-	pEnableWindow.Call(ui.edit, 1)
-	switch {
-	case o.err == classify.ErrNoExplanationsLeft:
-		ui.explainStatus = "No explanations left this session."
-	case o.err != nil:
-		ui.explainStatus = "Couldn't check it (" + textutil.Shorten(o.err.Error(), 60) + "). That one didn't count — try again."
-	case o.res.Accepted:
-		ui.save()
-		event("Allowed " + textutil.Shorten(o.res.Label, 40) + " — your reason was accepted")
-		pSetWindowTextW.Call(ui.edit, uintptr(unsafe.Pointer(u16(""))))
-		ui.explainStatus = ""
-		ui.blockedKey, ui.blockedHost = "", ""
-		hideOverlay()
-		backToBlockedWindow()
-	default:
-		ui.explainStatus = fmt.Sprintf("Not convinced (%.0f%% sure it's for your task). %d left — be specific about how it helps.",
-			o.res.Prob*100, o.res.Left)
-		ui.save() // the attempt counts
-	}
-	pInvalidateRect.Call(ui.overlay, 0, 1)
+	ui.eng.Explain(time.Now(), strings.TrimSpace(windowTitle(ui.edit)))
+	tick()
 }
 
 // backToBlockedWindow gives focus back to the window under the overlay.
 func backToBlockedWindow() {
-	if ui.blocked.hwnd != 0 {
-		pSetForegroundWindow.Call(ui.blocked.hwnd)
+	if ui.blockedHwnd != 0 {
+		pSetForegroundWindow.Call(ui.blockedHwnd)
 	}
 }
 
@@ -231,7 +40,7 @@ func backToBlockedWindow() {
 const appTitleBarPx = 32
 
 // showOverlay covers target, leaving topOffset px (at 100% scaling) free at the top.
-func showOverlay(target uintptr, view overlayView, topOffset int) {
+func showOverlay(target uintptr, view engine.View, topOffset int) {
 	if isIconic(target) {
 		hideOverlay()
 		return
@@ -289,7 +98,7 @@ type overlayLayout struct {
 	footer, stats                   rectI
 }
 
-func layoutOverlay(w, h int32, v overlayView) overlayLayout {
+func layoutOverlay(w, h int32, v engine.View) overlayLayout {
 	var l overlayLayout
 	cw := min(int32(760), w-32)
 	pad := int32(28)
@@ -386,13 +195,13 @@ func paint(hwnd uintptr) {
 	if v.Explain && main {
 		text(v.Prompt, l.prompt, ui.fontSmall, rgb(161, 161, 170), one)
 		btn, label := ui.brushAccent[judge.CatOffTask], "Explain"
-		if ui.explainBusy {
+		if ui.frame.Explain.Busy {
 			btn, label = ui.brushEdit, "Checking…"
 		}
 		fill(l.button, btn)
 		text(label, l.button, ui.fontBody, rgb(24, 24, 27), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
 		// Read live: it changes while the overlay has focus and tick isn't updating the view.
-		status := ui.explainStatus
+		status := ui.frame.Explain.Status
 		statusColor := rgb(161, 161, 170)
 		if strings.HasPrefix(status, "Not convinced") || strings.HasPrefix(status, "Couldn't") {
 			statusColor = rgb(251, 146, 60)

@@ -26,6 +26,34 @@ go build -ldflags "-s -w" -o focuslock.exe ./cmd/focuslock
 
 The exe isn't in the repo; build it as above (from WSL: `GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o focuslock.exe ./cmd/focuslock`).
 
+## Linux (Omarchy / Hyprland)
+
+FocusLock also runs on Linux under Hyprland. The same engine (the Go code, built as `focuslock-engine`) judges and blocks; a small Qt Quick app, `focuslock`, asks for the session and draws the countdown bar and block screen as layer-shell surfaces, following the Omarchy theme.
+
+```
+cd linux
+bin/build        # Go engine + Qt app into linux/build/
+bin/test         # Go tests + Qt tests (offscreen)
+bin/install      # makepkg -fsi: installs it, so FocusLock shows up in the app launcher
+```
+
+Needs Go 1.24+, `qt6-base`, `qt6-declarative`, `qt6-wayland`, and `layer-shell-qt`.
+
+Open **FocusLock** from the launcher (Super + Space), or use the command line: `focuslock status`, `focuslock start 50m "task"`, `focuslock config`, `focuslock judge-check`. These are passed through to `focuslock-engine`. `focus.json` lives in `~/.config/FocusLock/`, and its Windows process names (`steam.exe`) also match their Linux names (`steam`).
+
+How it differs from Windows:
+- Tabs are judged by **window title**, since Linux has no UI Automation to read the address bar. `allowTitleKeywords` applies, as it does when a URL can't be read.
+- Blocked tabs are closed with `hyprctl dispatch sendshortcut CTRL, W`, and blocked apps get SIGTERM.
+- Not ported yet: the planning cue and `startup`, typing an explanation on the block screen, covering windows on your other monitors, and the `jevos` supervisor.
+
+| Key (start window) | Action |
+|---|---|
+| Ctrl+Enter | Start the session |
+| Enter | Start, from the duration or apps box |
+| Tab | Next box |
+| Esc | Close the window |
+| F1 / ? | Show the shortcuts |
+
 ## Use
 
 ```

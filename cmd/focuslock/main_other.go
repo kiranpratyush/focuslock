@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package main
 
@@ -11,6 +11,6 @@ import (
 // `go vet ./...` work elsewhere, where the portable packages are developed
 // and tested.
 func main() {
-	fmt.Fprintln(os.Stderr, "FocusLock runs on Windows. Build it with: GOOS=windows go build ./cmd/focuslock")
+	fmt.Fprintln(os.Stderr, "FocusLock runs on Windows and Linux (Hyprland).")
 	os.Exit(1)
 }

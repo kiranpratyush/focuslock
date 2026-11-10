@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=FocusLock
+Comment=Start a focus session you can't casually quit
+Exec=focuslock open
+Icon=focuslock
+Terminal=false
+Categories=Utility;
+StartupWMClass=focuslock

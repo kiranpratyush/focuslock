@@ -4,14 +4,15 @@ package main
 
 import (
 	"runtime"
+	"strconv"
 	"syscall"
 	"time"
 	"unsafe"
 
 	"focuslock/internal/classify"
 	"focuslock/internal/config"
+	"focuslock/internal/engine"
 	"focuslock/internal/judge"
-	"focuslock/internal/logx"
 	"focuslock/internal/session"
 	"focuslock/internal/textutil"
 )
@@ -31,10 +32,12 @@ const (
 type uiState struct {
 	urls *urlReader
 	cfg  config.Config
-	sess session.State
-	cls  *classify.Classifier
-	save func() // writes accepted explanations to state.json
+	eng  *engine.Engine
 	inst uintptr
+
+	frame       engine.Frame // the last tick's
+	blockedHwnd uintptr      // the window under the overlay
+	lastBlockID int
 
 	appBar  uintptr
 	overlay uintptr
@@ -46,49 +49,14 @@ type uiState struct {
 	brushAccent                                         map[judge.Category]uintptr
 
 	barText      string
-	view         overlayView
+	view         engine.View
 	lay          overlayLayout
 	overlayShown bool
 	overlaySize  [2]int32
 
-	blocked      blockedWindow
-	blockedKey   string
-	blockedSince time.Time
-	blockCount   int
-	// Site and view of the current block, so a strict site that's still
-	// being judged stays covered (judge.Verdict.Hold) instead of flickering.
-	blockedHost string
-	musicKey    string
-	musicSince  time.Time
-	lastKill    time.Time
-	lastTick    time.Time
-	lastEvent   string
-	lastEventAt time.Time
-
-	explainBusy   bool
-	explainStatus string
-	explainDone   chan explainOutcome
-
-	rations  *classify.Rations
-	rationFg string // ration rule of the window in front last tick
-
 	// Overlays for windows in front on your other monitors.
 	side     []*sideOverlay
-	sideLog  map[uintptr]string // last logged block per window, to log once
 	enumProc uintptr
-}
-
-// blockedWindow is what's under the overlay right now.
-type blockedWindow struct {
-	hwnd             uintptr
-	proc, title, url string
-	verdict          judge.Verdict
-	ration           *config.RationRule // set when it's covered by rationing, not the judge
-}
-
-type explainOutcome struct {
-	res classify.ExplainResult
-	err error
 }
 
 var ui uiState
@@ -98,8 +66,8 @@ func runUI(cfg config.Config, sess session.State, cls *classify.Classifier, save
 	defer runtime.UnlockOSThread()
 
 	pSetProcessDPIAware.Call()
-	ui = uiState{cfg: cfg, sess: sess, cls: cls, save: save, explainDone: make(chan explainOutcome, 1),
-		rations: classify.NewRations(cfg.Rations), sideLog: map[uintptr]string{}}
+	ui = uiState{cfg: cfg}
+	ui.eng = engine.New(cfg, sess, cls, winPlatform{}, save)
 	ui.enumProc = syscall.NewCallback(collectWindow)
 	ui.urls = newURLReader()
 	ui.inst, _, _ = pGetModuleHandleW.Call(0)
@@ -258,195 +226,62 @@ func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 
 // ---------- the monitor loop ----------
 
+// tick runs the engine and draws its frame.
 func tick() {
-	now := time.Now()
-	dt := now.Sub(ui.lastTick)
-	if ui.lastTick.IsZero() || dt > 5*time.Second {
-		dt = 0
-	}
-	ui.lastTick = now
-	if ui.sess.Remaining() == 0 {
+	prev := ui.frame.Explain
+	f := ui.eng.Tick(time.Now())
+	ui.frame = f
+	if f.Done {
 		hideOverlay()
+		showSides(nil)
 		pPostQuitMessage.Call(0)
 		return
 	}
 
-	// 1. Kill blocked apps wherever they are (not just in front).
-	if now.Sub(ui.lastKill) >= killEvery {
-		ui.lastKill = now
-		list := ui.cfg.BlockedProcesses
-		if !ui.cfg.Music.Allowed {
-			list = append(append([]string{}, list...), ui.cfg.MusicProcesses...)
-		}
-		for _, name := range killByName(list) {
-			event("Closed " + name)
-		}
-	}
-
-	// Windows in front on your other monitors are checked too.
-	defer checkOtherMonitors()
-
-	// 2. An explanation came back from the judge.
-	select {
-	case o := <-ui.explainDone:
-		explainFinished(o)
-	default:
-	}
-
-	// 3. judge.Judge the foreground window.
-	fg := foregroundWindow()
-	// While you're typing an explanation, or the judge is reading it, the
-	// tab's countdown stands still.
-	if ui.blockedKey != "" && (fg == ui.overlay || ui.explainBusy) {
-		ui.blockedSince = ui.blockedSince.Add(dt)
-	}
-	if fg == 0 || fg == ui.appBar || fg == ui.overlay {
-		updateBar()
-		return
-	}
-	proc := processName(windowPID(fg))
-	title := windowTitle(fg)
-	isBrowser := textutil.Contains(ui.cfg.Browsers, proc)
-	tabURL := ""
-	if isBrowser {
-		tabURL = ui.urls.URL(fg)
-	}
-	key := proc + "|" + title + "|" + tabURL
-	host, path := classify.NormalizeURL(tabURL)
-
-	// Rationed (email, chat): covered between check windows. Switching to
-	// it counts as a visit and opens a window if one is due.
-	if rule := ui.rations.Match(proc, title, host, path); rule != nil {
-		st := ui.rations.Visit(rule, ui.rationFg != rule.Name)
-		ui.rationFg = rule.Name
-		if st.Blocked {
-			showRationBlock(fg, proc, title, tabURL, key, host, isBrowser, st, now)
-			updateBar()
-			return
-		}
-	} else {
-		ui.rationFg = ""
-	}
-
-	v := ui.cls.Classify(proc, title, tabURL)
-
-	block, holding := false, false
-	musicOver := false
-	switch v.Cat {
-	case judge.CatEntertainment, judge.CatOffTask:
-		block = true
-		ui.musicKey = ""
-	case judge.CatMusic:
-		if !ui.cfg.Music.Allowed {
-			block = true
-			break
-		}
-		// Grace is per site, not per title: hopping from video to video
-		// on the same site doesn't restart the 60 seconds.
-		mk := proc + "|" + title
-		if host != "" {
-			mk = proc + "|" + host
-		}
-		if ui.musicKey != mk {
-			ui.musicKey, ui.musicSince = mk, now
-		}
-		grace := time.Duration(ui.cfg.Music.ForegroundGraceSeconds) * time.Second
-		if now.Sub(ui.musicSince) >= grace {
-			block, musicOver = true, true
-		}
-	case judge.CatPending:
-		if v.Hold && host != "" && host == ui.blockedHost {
-			block, holding = true, true
-		}
-	default:
-		ui.musicKey = ""
-	}
-
-	if !block {
-		ui.blockedKey, ui.blockedHost = "", ""
-		hideOverlay()
-		updateBar()
-		return
-	}
-
-	if !isBrowser && v.Source == "rule" {
-		// An app on your blocked list: close it.
-		for _, name := range killByName([]string{proc}) {
-			event("Closed " + name)
-		}
-		hideOverlay()
-		updateBar()
-		return
-	}
-
-	if !holding && ui.blockedKey != key {
-		ui.blockedKey, ui.blockedSince = key, now
-		ui.blockedHost = host
-		ui.blocked = blockedWindow{hwnd: fg, proc: proc, title: title, url: tabURL, verdict: v}
-		ui.blockCount++
-		ui.explainStatus = ""
+	if r := f.Explain.Released; r != nil {
+		// The explanation was accepted: the block is gone.
 		pSetWindowTextW.Call(ui.edit, uintptr(unsafe.Pointer(u16(""))))
-		logx.Printf("blocked [%s/%s %.2f]: %s — %q %s", v.Source, v.Cat, v.Prob, proc, title, tabURL)
-	}
-	ui.blocked.hwnd = fg
-
-	view := blockView(ui.blocked, musicOver)
-	if holding {
-		view = ui.view
-		view.Explain = false
-		view.Footer = "Checking the new page…"
-		showOverlay(fg, view, ui.cfg.OverlayTopOffset)
-		updateBar()
-		return
-	}
-
-	if !isBrowser {
-		// An app the judge flagged: cover it but never kill it or send keys —
-		// it might hold unsaved work. Its title bar stays free so you can
-		// minimize or close it yourself.
-		view.Footer = "Switch back to your task, or minimize this window."
-		showOverlay(fg, view, appTitleBarPx)
-		updateBar()
-		return
-	}
-
-	view.Footer = "Switch to a work tab to continue."
-	if closeAfter := time.Duration(ui.cfg.CloseTabAfterSeconds) * time.Second; closeAfter > 0 {
-		left := closeAfter - now.Sub(ui.blockedSince)
-		if left <= 0 && !ui.explainBusy {
-			sendCtrlW()
-			event("Closed tab: " + textutil.Shorten(title, 40))
-			ui.blockedKey = ""
-			hideOverlay()
-			updateBar()
-			return
-		}
-		view.Footer = "This tab closes in " + session.FmtRemaining(max(left, 0)) + ". Switch to a work tab to keep it open."
-		if view.Explain {
-			view.Footer = "This tab closes in " + session.FmtRemaining(max(left, 0)) + ". Typing an explanation pauses the countdown."
+		hideOverlay()
+		if h := hwndOf(r.ID); h != 0 {
+			pSetForegroundWindow.Call(h)
 		}
 	}
-	showOverlay(fg, view, ui.cfg.OverlayTopOffset)
+	if f.Explain.Busy != prev.Busy {
+		enable := uintptr(1)
+		if f.Explain.Busy {
+			enable = 0
+		}
+		pEnableWindow.Call(ui.edit, enable)
+	}
+
+	if o := f.Overlay; o != nil {
+		if o.BlockID != ui.lastBlockID {
+			ui.lastBlockID = o.BlockID
+			pSetWindowTextW.Call(ui.edit, uintptr(unsafe.Pointer(u16(""))))
+		}
+		ui.blockedHwnd = hwndOf(o.Window.ID)
+		showOverlay(ui.blockedHwnd, o.View, coverOffset(o.Cover))
+	} else {
+		hideOverlay()
+	}
+	if ui.overlayShown && f.Explain != prev {
+		pInvalidateRect.Call(ui.overlay, 0, 1)
+	}
+	showSides(f.Side)
 	updateBar()
 }
 
-func event(s string) {
-	ui.lastEvent, ui.lastEventAt = s, time.Now()
-	logx.Printf("%s", s)
+// coverOffset is how much of the window's top stays free (at 100% scaling):
+// a browser's tab strip and address bar, an app's title bar.
+func coverOffset(c engine.Cover) int {
+	if c == engine.CoverBrowser {
+		return ui.cfg.OverlayTopOffset
+	}
+	return appTitleBarPx
 }
 
 func barText() string {
-	t := "FOCUS  ·  " + session.FmtRemaining(ui.sess.Remaining()) + " left  ·  ends " + ui.sess.End().Format("15:04")
-	if task := ui.cls.Intent(); task != "" {
-		t += "  ·  " + textutil.Shorten(task, 50)
-	}
-	if ui.cls.JudgeName() == "" {
-		t += "  ·  rules only"
-	}
-	if ui.lastEvent != "" && time.Since(ui.lastEventAt) < 10*time.Second {
-		t += "  ·  " + ui.lastEvent
-	}
-	return t
+	return "FOCUS  ·  " + session.FmtRemaining(ui.frame.Remaining) + " left  ·  " + ui.frame.Bar
 }
 
 func updateBar() {
@@ -455,3 +290,61 @@ func updateBar() {
 		pInvalidateRect.Call(ui.appBar, 0, 1)
 	}
 }
+
+// ---------- the platform ----------
+
+// winPlatform is engine.Platform on Windows: Win32 for windows and
+// processes, UI Automation for the tab's URL.
+type winPlatform struct{}
+
+func hwndID(h uintptr) string { return strconv.FormatUint(uint64(h), 16) }
+
+func hwndOf(id string) uintptr {
+	n, _ := strconv.ParseUint(id, 16, 64)
+	return uintptr(n)
+}
+
+func isOurs(h uintptr) bool { return h == ui.appBar || h == ui.overlay || sideFor(h) != nil }
+
+func describe(h uintptr) engine.Window {
+	w := engine.Window{ID: hwndID(h), Proc: processName(windowPID(h)), Title: windowTitle(h)}
+	if textutil.Contains(ui.cfg.Browsers, w.Proc) {
+		w.URL = ui.urls.URL(h)
+	}
+	return w
+}
+
+func (winPlatform) ActiveWindow() (engine.Window, bool) {
+	fg := foregroundWindow()
+	if fg == 0 {
+		return engine.Window{}, false
+	}
+	if isOurs(fg) {
+		return engine.Window{ID: hwndID(fg), Own: true}, true
+	}
+	return describe(fg), true
+}
+
+// OtherFrontWindows: the topmost app window on each monitor other than the
+// one holding active.
+func (winPlatform) OtherFrontWindows(active string) []engine.Window {
+	a := hwndOf(active)
+	if a == 0 {
+		a = foregroundWindow()
+	}
+	aMon, _, _ := pMonitorFromWindow.Call(a, MONITOR_DEFAULTTONEAREST)
+	var out []engine.Window
+	for _, w := range frontWindows() {
+		if w.monitor == aMon || w.hwnd == a {
+			continue
+		}
+		out = append(out, describe(w.hwnd))
+	}
+	return out
+}
+
+func (winPlatform) KillByName(names []string) []string { return killByName(names) }
+
+// CloseTab sends Ctrl+W, which reaches the focused window: the engine only
+// closes the tab in front.
+func (winPlatform) CloseTab(engine.Window) { sendCtrlW() }

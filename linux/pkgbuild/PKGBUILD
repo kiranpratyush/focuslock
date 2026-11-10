@@ -1,0 +1,25 @@
+pkgname=focuslock
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A focus timer you can't casually quit: covers entertainment until the timer ends"
+arch=('x86_64' 'aarch64')
+license=('unknown')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'layer-shell-qt' 'hyprland')
+# Go 1.24+ is needed too; it isn't listed so a mise-installed Go works.
+makedepends=('gcc' 'make')
+options=('!debug' '!lto')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/.."
+  ./bin/build
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 build/focuslock "$pkgdir/usr/bin/focuslock"
+  install -Dm755 build/focuslock-engine "$pkgdir/usr/lib/focuslock/focuslock-engine"
+  install -Dm644 "$startdir/focuslock.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/focuslock.svg"
+  install -Dm644 "$startdir/focuslock.desktop" "$pkgdir/usr/share/applications/focuslock.desktop"
+}
