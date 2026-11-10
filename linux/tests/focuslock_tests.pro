@@ -1,4 +1,4 @@
-QT += core gui quick quickcontrols2 testlib
+QT += core gui network quick quickcontrols2 testlib
 CONFIG += c++17 testcase
 TARGET = focuslock_tests
 TEMPLATE = app

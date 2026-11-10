@@ -1,4 +1,4 @@
-QT += core gui qml quick quickcontrols2
+QT += core gui network qml quick quickcontrols2
 
 CONFIG += c++17 release
 TARGET = focuslock

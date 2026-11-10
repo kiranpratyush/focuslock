@@ -28,7 +28,7 @@ The exe isn't in the repo; build it as above (from WSL: `GOOS=windows GOARCH=amd
 
 ## Linux (Omarchy / Hyprland)
 
-FocusLock also runs on Linux under Hyprland. The same engine (the Go code, built as `focuslock-engine`) judges and blocks; a small Qt Quick app, `focuslock`, asks for the session and draws the countdown bar and block screen as layer-shell surfaces, following the Omarchy theme.
+FocusLock also runs on Linux under Hyprland. The same engine (`internal/engine`, built as `focuslock-engine`) judges and blocks on every OS; a small Qt Quick app, `focuslock`, asks for the session and draws the countdown bar and block screen as layer-shell surfaces, following the Omarchy theme. The two talk over a private socket (`$XDG_RUNTIME_DIR/focuslock-engine.sock`, JSON lines): frames go to the app twice a second, and what you type in the block screen's explanation box comes back.
 
 ```
 cd linux
@@ -44,7 +44,8 @@ Open **FocusLock** from the launcher (Super + Space), or use the command line: `
 How it differs from Windows:
 - Tabs are judged by **window title**, since Linux has no UI Automation to read the address bar. `allowTitleKeywords` applies, as it does when a URL can't be read.
 - Blocked tabs are closed with `hyprctl dispatch sendshortcut CTRL, W`, and blocked apps get SIGTERM.
-- Not ported yet: the planning cue and `startup`, typing an explanation on the block screen, covering windows on your other monitors, and the `jevos` supervisor.
+- Click the block screen to type an explanation (the browser keeps the keyboard until then); typing pauses the tab's countdown, as on Windows.
+- Not ported yet: the planning cue and `startup`, covering windows on your other monitors, and the `jevos` supervisor.
 
 | Key (start window) | Action |
 |---|---|

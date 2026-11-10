@@ -25,7 +25,10 @@ void Layer::makeOverlay(QWindow *window) {
     layer->setLayer(Window::LayerOverlay);
     layer->setAnchors(Window::Anchors(Window::AnchorTop | Window::AnchorLeft));
     layer->setExclusiveZone(-1);
-    layer->setKeyboardInteractivity(Window::KeyboardInteractivityNone);
+    // The browser keeps the keyboard (Ctrl+Tab to a work tab) until you
+    // click the block screen to type an explanation.
+    layer->setKeyboardInteractivity(Window::KeyboardInteractivityOnDemand);
+    layer->setActivateOnShow(false);
 }
 
 void Layer::place(QWindow *window, const QString &monitor, int x, int y, int w, int h, bool shown) {

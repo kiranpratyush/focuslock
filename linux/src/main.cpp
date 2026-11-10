@@ -1,7 +1,7 @@
 // focuslock — a focus timer you can't casually quit, for Omarchy.
 //
 //   focuslock              the start window (or how long is left)
-//   focuslock bar FILE     the countdown bar and block screen; the engine runs it
+//   focuslock bar SOCKET   the countdown bar and block screen; the engine runs it
 //   focuslock status|config|judge-check|judge-eval|start …   handed to focuslock-engine
 
 #include <QDateTime>
@@ -83,7 +83,6 @@ int main(int argc, char *argv[]) {
                 QCoreApplication::quit();
         });
         parentWatch.start(500);
-        live.read(QDateTime::currentSecsSinceEpoch());
         return app.exec();
     }
 

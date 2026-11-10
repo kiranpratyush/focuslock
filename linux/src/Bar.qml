@@ -39,8 +39,23 @@ QtObject {
         id: ov
         visible: false
         color: "#f50c0c10"
+        Material.theme: Material.Dark
+        Material.accent: ov.accent
         readonly property var v: live.overlay
         readonly property color accent: accentFor(v.accent || "")
+
+        function submit() {
+            if (!live.explainBusy && reason.text.trim().length > 0)
+                live.explain(reason.text.trim())
+        }
+
+        // A new block, or one lifted by an accepted explanation, starts with
+        // an empty box.
+        Connections {
+            target: live
+            function onBlockIdChanged() { reason.text = "" }
+            function onReleased() { reason.text = ""; reason.focus = false }
+        }
 
         Rectangle {
             anchors.centerIn: parent
@@ -64,6 +79,38 @@ QtObject {
                 Label { Layout.fillWidth: true; text: ov.v.why || ""; wrapMode: Text.WordWrap; font.pixelSize: 16; color: "white" }
                 Label { Layout.fillWidth: true; text: ov.v.task || ""; wrapMode: Text.WordWrap; font.pixelSize: 16; color: "white"; opacity: 0.85 }
                 Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }
+
+                // "Need this for your task?" Click to type: the browser keeps
+                // the keyboard until then. Enter sends, Esc gives it back.
+                Label { Layout.fillWidth: true; visible: ov.v.explain === true; text: ov.v.prompt || ""; wrapMode: Text.WordWrap; color: "white"; opacity: 0.85 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: ov.v.explain === true
+                    spacing: 10
+                    TextField {
+                        id: reason
+                        Layout.fillWidth: true
+                        Material.accent: ov.accent
+                        Material.roundedScale: theme.radius
+                        placeholderText: qsTr("How does this help your task?")
+                        maximumLength: 300
+                        enabled: !live.explainBusy
+                        onActiveFocusChanged: live.setTyping(activeFocus)
+                        Keys.onReturnPressed: ov.submit()
+                        Keys.onEnterPressed: ov.submit()
+                        Keys.onEscapePressed: { reason.focus = false; live.setTyping(false) }
+                    }
+                    Button {
+                        text: live.explainBusy ? qsTr("Checking…") : qsTr("Explain")
+                        Material.accent: ov.accent
+                        Material.roundedScale: theme.radius
+                        highlighted: true
+                        enabled: !live.explainBusy && reason.text.trim().length > 0
+                        onClicked: ov.submit()
+                    }
+                }
+                Label { Layout.fillWidth: true; visible: live.explainStatus !== ""; text: live.explainStatus; wrapMode: Text.WordWrap; color: ov.accent }
+
                 Label { Layout.fillWidth: true; text: ov.v.footer || ""; wrapMode: Text.WordWrap; font.bold: true; color: "white" }
                 Label { Layout.fillWidth: true; text: ov.v.stats || ""; wrapMode: Text.WordWrap; opacity: 0.5; color: "white" }
             }
