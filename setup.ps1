@@ -21,10 +21,10 @@ function RefreshPath {
     $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
                 [Environment]::GetEnvironmentVariable('Path', 'User')
 }
-function Winget($id, $extra = @()) {
-    if (-not (Have winget)) { throw 'winget is missing. Install "App Installer" from the Microsoft Store, then run this again.' }
+function Install-WithWinget($id, $extra = @()) {
+    if (-not (Have winget.exe)) { throw 'winget is missing. Install "App Installer" from the Microsoft Store, then run this again.' }
     Step "installing $id"
-    winget install --id $id -e --silent --accept-package-agreements --accept-source-agreements @extra
+    winget.exe install --id $id -e --silent --accept-package-agreements --accept-source-agreements @extra
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {   # -1978335189 = already installed
         throw "winget install $id failed ($LASTEXITCODE)"
     }
@@ -32,7 +32,7 @@ function Winget($id, $extra = @()) {
 }
 
 # 1. Git and the source
-if (-not (Have git)) { Winget 'Git.Git' }
+if (-not (Have git)) { Install-WithWinget 'Git.Git' }
 $here = if ($PSScriptRoot) { $PSScriptRoot } else { '' }
 if ($here -and (Test-Path (Join-Path $here 'go.mod')) -and (Test-Path (Join-Path $here 'app'))) {
     $Repo = $here
@@ -48,7 +48,7 @@ function GoOk {
     $v = (go env GOVERSION) -replace '^go', '' -replace '[^0-9.].*$', ''
     return ([version]$v -ge $GoMin)
 }
-if (-not (GoOk)) { Winget 'GoLang.Go' }
+if (-not (GoOk)) { Install-WithWinget 'GoLang.Go' }
 if (-not (GoOk)) { throw "Go $GoMin+ is needed. Open a new PowerShell and run this again." }
 
 # 3. Visual Studio C++ build tools (cl, nmake)
@@ -58,7 +58,7 @@ function VsPath {
     & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 }
 if (-not (VsPath)) {
-    Winget 'Microsoft.VisualStudio.2022.BuildTools' @('--override',
+    Install-WithWinget 'Microsoft.VisualStudio.2022.BuildTools' @('--override',
         '--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended')
 }
 $vs = VsPath
@@ -71,12 +71,16 @@ Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-ar
 $QtBin = Join-Path $QtRoot "$QtVersion\msvc2022_64\bin"
 if (-not (Have qmake) -and -not (Test-Path (Join-Path $QtBin 'qmake.exe'))) {
     $py = if (Have py) { 'py' } elseif (Have python) { 'python' } else { $null }
-    if (-not $py) { Winget 'Python.Python.3.12'; $py = if (Have py) { 'py' } else { 'python' } }
+    if (-not $py) { Install-WithWinget 'Python.Python.3.12'; $py = if (Have py) { 'py' } else { 'python' } }
     Step "installing Qt $QtVersion (about 1 GB, takes a while)"
     & $py -m pip install --user --upgrade aqtinstall
     if ($LASTEXITCODE -ne 0) { throw 'pip install aqtinstall failed' }
+    # aqt writes aqtinstall.log to the current folder, which may be read-only (C:\).
+    Push-Location (New-Item -ItemType Directory -Force $QtRoot)
     & $py -m aqt install-qt windows desktop $QtVersion $QtArch -O $QtRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Qt download failed' }
+    $aqtExit = $LASTEXITCODE
+    Pop-Location
+    if ($aqtExit -ne 0) { throw 'Qt download failed' }
 }
 if (Test-Path $QtBin) { $env:Path = "$QtBin;$env:Path" }
 if (-not (Have qmake)) { throw "qmake not found. Expected it in $QtBin." }
