@@ -8,8 +8,15 @@ DNS1=185.228.168.10   # CleanBrowsing Adult filter
 DNS2=185.228.169.11
 MARK_BEGIN="# >>> focuslock lockdown >>>"
 MARK_END="# <<< focuslock lockdown <<<"
+RUN=/run/focuslock-lockdown        # requests from your user: <name>.open
+STATE=/var/lib/focuslock-lockdown  # time used today, root-only
+OPEN_DOMAINS=""                    # budget domains open right now
 
-domains() { grep -vE '^\s*(#|$)' "$SRC/blocklist.txt" | tr -d ' \r'; }
+# Blocked domains, minus any budget domains that are open right now.
+domains() {
+  grep -vE '^\s*(#|$)' "$SRC/blocklist.txt" | tr -d ' \r' \
+    | grep -vxF -f <(tr ' ' '\n' <<<"$OPEN_DOMAINS" | grep .)
+}
 
 put() { # put <dest> <content>: write only when different, keep it immutable
   local dest=$1 content=$2
@@ -52,6 +59,7 @@ servers=$DNS1,$DNS2"
 table inet focuslock
 delete table inet focuslock
 table inet focuslock {
+  set budget4 { type ipv4_addr; }
   set doh4 { type ipv4_addr; elements = { 1.1.1.1, 1.0.0.1, 8.8.8.8, 8.8.4.4, 9.9.9.9, 149.112.112.112, 208.67.222.222, 208.67.220.220, 94.140.14.14, 94.140.15.15, 45.90.28.0, 45.90.30.0 } }
   chain nat_out {
     type nat hook output priority -100; policy accept;
@@ -68,9 +76,78 @@ table inet focuslock {
     tcp dport 853 drop
     ip daddr @doh4 tcp dport 443 drop
     ip daddr @doh4 udp dport 443 drop
+    ip daddr @budget4 drop
   }
 }
 NFT
+  fill_budget_ips
+}
+
+# --- Daily budgets (budgets.txt): open a blocked site for limited time ---
+
+budget_lines() { grep -vE '^\s*(#|$)' "$SRC/budgets.txt" 2>/dev/null; }
+
+# While a budget site is closed, its servers' addresses are dropped too, so
+# a tab that's already open stops working (including HTTP/3), not just new loads.
+fill_budget_ips() {
+  nft flush set inet focuslock budget4 2>/dev/null
+  [[ -n $OPEN_DOMAINS ]] && return
+  local ips
+  ips=$(sort -u "$STATE"/ips-* 2>/dev/null | grep -E '^[0-9.]+$' | paste -sd, -)
+  [[ -n $ips ]] && nft add element inet focuslock budget4 "{ $ips }" 2>/dev/null
+}
+
+# Learn the servers' addresses while the site is open (DNS isn't blocked then).
+remember_ips() { # remember_ips <name> <domains...>
+  local name=$1; shift
+  local f=$STATE/ips-$name d
+  for d in "$@"; do
+    getent ahostsv4 "$d" "api.$d" 2>/dev/null | awk '{print $1}'
+  done | sort -u | cat - "$f" 2>/dev/null | sort -u | tail -200 > "$f.new" && mv "$f.new" "$f"
+}
+
+budget_tick() { # budget_tick <seconds since last tick>
+  local dt=$1 today name daily session doms new_open=""
+  today=$(date +%F)
+  mkdir -p -m 700 "$STATE"; mkdir -p "$RUN"; chmod 1733 "$RUN"
+  while read -r name daily session doms; do
+    local f=$STATE/budget-$name day="" used=0 sess=0 st
+    [[ -f $f ]] && read -r day used sess < "$f"
+    [[ $day == "$today" ]] || { used=0; sess=0; }
+    if [[ -e $RUN/$name.open ]]; then
+      if (( used >= daily * 60 )); then
+        rm -f "$RUN/$name.open"; sess=0
+        logger -t focuslock-lockdown "$name: daily budget used up"
+      elif (( sess >= session * 60 )); then
+        rm -f "$RUN/$name.open"; sess=0
+        logger -t focuslock-lockdown "$name: closed after $session minutes"
+      else
+        used=$((used + dt)); sess=$((sess + dt)); new_open+=" $doms"
+        # shellcheck disable=SC2086
+        remember_ips "$name" $doms
+      fi
+    else
+      sess=0
+    fi
+    echo "$today $used $sess" > "$f"
+    if [[ -e $RUN/$name.open ]]; then
+      st="open: $(( (session * 60 - sess) / 60 )) min left in this session, $(( (daily * 60 - used) / 60 )) min left today"
+    else
+      st="closed: $(( (daily * 60 - used) / 60 )) of $daily min left today"
+    fi
+    echo "$name $st" > "$RUN/$name.status.new" && mv "$RUN/$name.status.new" "$RUN/$name.status"
+  done < <(budget_lines)
+  new_open=${new_open# }
+  if [[ $new_open != "$OPEN_DOMAINS" ]]; then
+    local was=$OPEN_DOMAINS
+    OPEN_DOMAINS=$new_open
+    apply_hosts; apply_browser_policy; fill_budget_ips
+    if [[ -n $was && -z $new_open ]]; then   # just closed: cut open connections
+      local ip
+      for ip in $(sort -u "$STATE"/ips-* 2>/dev/null); do ss -K dst "$ip" >/dev/null 2>&1; done
+    fi
+    logger -t focuslock-lockdown "budget sites open: ${OPEN_DOMAINS:-none}"
+  fi
 }
 
 apply_browser_policy() {
@@ -116,8 +193,8 @@ kill_banned() {
 
 pass() { apply_hosts; apply_dns; apply_browser_policy; kill_banned; }
 
-if [[ ${1:-} == once ]]; then pass; exit 0; fi
+if [[ ${1:-} == once ]]; then budget_tick 0; pass; exit 0; fi
 while true; do
   pass
-  for _ in 1 2 3 4 5 6; do kill_banned; sleep 5; done   # kill fast, restore every 30 s
+  for _ in 1 2 3 4 5 6; do budget_tick 5; kill_banned; sleep 5; done   # kill fast, restore every 30 s
 done
