@@ -28,6 +28,7 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 Register-ScheduledTask -TaskName 'FocusLock Lockdown' -Action $action -Trigger $triggers -Settings $settings `
     -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
 
-& "$Src\enforce.ps1"
+# A separate process, so this script's "Stop on any error" doesn't apply to it.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Src\enforce.ps1"
 Write-Host "Done. Restart your browsers and check chrome://policy / edge://policy."
 Write-Host "Last step: make your daily Windows account a Standard user, or this can all be undone."
