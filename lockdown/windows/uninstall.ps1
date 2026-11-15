@@ -6,7 +6,7 @@ foreach ($b in $banned) { Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows NT\Curre
 'HKLM:\SOFTWARE\Policies\Google\Chrome','HKLM:\SOFTWARE\Policies\Microsoft\Edge','HKLM:\SOFTWARE\Policies\BraveSoftware\Brave' |
     ForEach-Object { Remove-Item $_ -Recurse -Force -ErrorAction SilentlyContinue }
 Remove-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' DoHPolicy -ErrorAction SilentlyContinue
-Get-NetFirewallRule -DisplayName 'FocusLock:*' | Remove-NetFirewallRule
+Get-NetFirewallRule -DisplayName 'FocusLock:*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 Get-NetAdapter | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses }
 $hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
 attrib -r $hosts
