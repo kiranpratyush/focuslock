@@ -69,6 +69,20 @@ final class Policy {
         return prefs(c).getStringSet("allow", java.util.Collections.<String>emptySet());
     }
     static boolean youtubeAllowed(Context c) { return allowed(c).contains("com.google.android.youtube"); }
+    static int youtubeLimitMinutes(Context c) { return prefs(c).getInt("yt_limit", 0); }
+    static boolean youtubeOver(Context c) { return prefs(c).getBoolean("yt_over", false); }
+
+    // Daily YouTube limit. Lowering it is always allowed; raising it or
+    // removing it only in test mode.
+    static String setYoutubeLimit(Context c, int minutes) {
+        int cur = youtubeLimitMinutes(c);
+        boolean looser = cur > 0 && (minutes <= 0 || minutes > cur);
+        if (isFinal(c) && looser) return "Refused: final lock is on; the limit can only go down.";
+        prefs(c).edit().putInt("yt_limit", Math.max(minutes, 0)).commit();
+        if (minutes > 0) UsageWatcher.start(c);
+        UsageWatcher.check(c);
+        return "YouTube limit: " + (minutes > 0 ? minutes + " min a day" : "off") + "\n" + apply(c);
+    }
 
     static String setAllowed(Context c, String csv) {
         if (isFinal(c)) return "Refused: final lock is on.";
@@ -116,12 +130,15 @@ final class Policy {
         dpm.setApplicationRestrictions(a, CHROME, chromePolicy(c));
         try { dpm.setUninstallBlocked(a, CHROME, true); } catch (Exception ignored) { }
 
+        UsageWatcher.start(c);
+        int ytLimit = youtubeLimitMinutes(c);
         out.append("Active").append(isFinal(c) ? " (final lock)" : " (test mode: removable over USB)").append('\n')
            .append("• Installing apps: blocked\n")
            .append("• Factory reset, safe mode, new users, VPN: blocked\n")
            .append("• Private DNS: ").append(DNS_HOST).append(dns == 0 ? "" : " (status " + dns + ")").append('\n')
            .append("• Hidden apps: ").append(hidden).append('\n')
            .append(allow.isEmpty() ? "" : "• Allowed on this phone: " + allow + "\n")
+           .append(ytLimit > 0 ? "• YouTube limit: " + ytLimit + " min a day" + (youtubeOver(c) ? " (used up today)" : "") + "\n" : "")
            .append("• Chrome: no Incognito, SafeSearch, blocked sites");
         return out.toString();
     }
@@ -145,7 +162,7 @@ final class Policy {
             while ((line = r.readLine()) != null) {
                 line = line.trim();
                 if (line.isEmpty() || line.startsWith("#")) continue;
-                if (youtubeAllowed(c) && (line.contains("youtube") || line.equals("youtu.be")
+                if (youtubeAllowed(c) && !youtubeOver(c) && (line.contains("youtube") || line.equals("youtu.be")
                         || line.equals("ytimg.com") || line.equals("googlevideo.com"))) continue;
                 out.add(line);
             }
@@ -161,6 +178,7 @@ final class Policy {
         ComponentName a = admin(c);
         for (String r : RESTRICTIONS) { try { dpm.clearUserRestriction(a, r); } catch (Exception ignored) { } }
         for (String p : HIDDEN) { try { dpm.setApplicationHidden(a, p, false); } catch (Exception ignored) { } }
+        try { dpm.setPackagesSuspended(a, new String[] { UsageWatcher.YT }, false); } catch (Exception ignored) { }
         dpm.setApplicationRestrictions(a, CHROME, new Bundle());
         try { dpm.setUninstallBlocked(a, CHROME, false); } catch (Exception ignored) { }
         try { dpm.setGlobalPrivateDnsModeOpportunistic(a); } catch (Exception ignored) { }

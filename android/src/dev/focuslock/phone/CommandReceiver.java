@@ -14,6 +14,8 @@ public class CommandReceiver extends BroadcastReceiver {
             result = Policy.release(context);
         } else if (action.endsWith(".ALLOW")) {
             result = Policy.setAllowed(context, intent.getStringExtra("packages"));
+        } else if (action.endsWith(".LIMIT")) {
+            result = Policy.setYoutubeLimit(context, intent.getIntExtra("youtube_minutes", 0));
         } else if (action.endsWith(".FINAL_LOCK")) {
             result = Policy.finalLock(context);
         } else {
