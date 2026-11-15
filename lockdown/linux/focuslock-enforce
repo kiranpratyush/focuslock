@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# FocusLock lockdown enforcer (runs as root from focuslock-lockdown.service).
+# Every 30 s it puts the blocks back and kills banned programs, so editing a
+# file or launching Tor only works until the next pass.
+set -u
+SRC=/etc/focuslock-lockdown
+DNS1=185.228.168.10   # CleanBrowsing Adult filter
+DNS2=185.228.169.11
+MARK_BEGIN="# >>> focuslock lockdown >>>"
+MARK_END="# <<< focuslock lockdown <<<"
+
+domains() { grep -vE '^\s*(#|$)' "$SRC/blocklist.txt" | tr -d ' \r'; }
+
+put() { # put <dest> <content>: write only when different, keep it immutable
+  local dest=$1 content=$2
+  if [[ ! -f $dest ]] || [[ "$(cat "$dest")" != "$content" ]]; then
+    chattr -i "$dest" 2>/dev/null
+    mkdir -p "$(dirname "$dest")"
+    printf '%s\n' "$content" > "$dest"
+    logger -t focuslock-lockdown "restored $dest"
+    [[ $dest == /etc/NetworkManager/* ]] && nmcli general reload conf,dns-full 2>/dev/null
+  fi
+  chattr +i "$dest" 2>/dev/null
+}
+
+apply_hosts() {
+  local block="" d
+  for d in $(domains); do
+    block+="0.0.0.0 $d"$'\n'"0.0.0.0 www.$d"$'\n'"0.0.0.0 m.$d"$'\n'
+  done
+  local base
+  base=$(sed "/^$MARK_BEGIN\$/,/^$MARK_END\$/d" /etc/hosts)
+  put /etc/hosts "$base
+$MARK_BEGIN
+$block$MARK_END"
+}
+
+apply_dns() {
+  # NetworkManager global DNS beats every connection's own DNS.
+  # Omarchy keeps its own global DNS in 20-omarchy-dns.conf, and NetworkManager
+  # uses that one, so the filter goes there (and in our own file, in case it's removed).
+  local conf="[global-dns]
+
+[global-dns-domain-*]
+servers=$DNS1,$DNS2"
+  put /etc/NetworkManager/conf.d/20-omarchy-dns.conf "$conf"
+  put /etc/NetworkManager/conf.d/99-focuslock-dns.conf "$conf"
+  # Every DNS query is redirected to the filter, whichever server the system
+  # asked, so this works no matter what NetworkManager or resolved think.
+  # DoT and known DoH resolvers are dropped.
+  nft -f - <<NFT 2>&1 | logger -t focuslock-lockdown
+table inet focuslock
+delete table inet focuslock
+table inet focuslock {
+  set doh4 { type ipv4_addr; elements = { 1.1.1.1, 1.0.0.1, 8.8.8.8, 8.8.4.4, 9.9.9.9, 149.112.112.112, 208.67.222.222, 208.67.220.220, 94.140.14.14, 94.140.15.15, 45.90.28.0, 45.90.30.0 } }
+  chain nat_out {
+    type nat hook output priority -100; policy accept;
+    ip daddr { 127.0.0.0/8, 172.16.0.0/12 } accept
+    meta nfproto ipv4 udp dport 53 dnat ip to $DNS1
+    meta nfproto ipv4 tcp dport 53 dnat ip to $DNS1
+  }
+  chain out {
+    type filter hook output priority 0; policy accept;
+    ip daddr { 127.0.0.0/8, 172.16.0.0/12 } accept
+    meta nfproto ipv6 udp dport 53 drop
+    meta nfproto ipv6 tcp dport 53 drop
+    udp dport 853 drop
+    tcp dport 853 drop
+    ip daddr @doh4 tcp dport 443 drop
+    ip daddr @doh4 udp dport 443 drop
+  }
+}
+NFT
+}
+
+apply_browser_policy() {
+  local list="" d
+  for d in $(domains); do list+="\"$d\","; done
+  local ext="" e
+  for e in $(cat "$SRC/allowed-extensions.txt" 2>/dev/null); do ext+="\"$e\","; done
+  local json="{
+  \"DnsOverHttpsMode\": \"off\",
+  \"IncognitoModeAvailability\": 1,
+  \"BrowserGuestModeEnabled\": false,
+  \"BrowserAddPersonEnabled\": false,
+  \"ForceGoogleSafeSearch\": true,
+  \"ForceBingSafeSearch\": 2,
+  \"ForceYouTubeRestrict\": 2,
+  \"TorDisabled\": true,
+  \"BraveVPNDisabled\": true,
+  \"ExtensionInstallBlocklist\": [\"*\"],
+  \"ExtensionInstallAllowlist\": [${ext%,}],
+  \"URLBlocklist\": [${list%,}]
+}"
+  local dir
+  for dir in /etc/chromium/policies/managed /etc/opt/chrome/policies/managed \
+             /etc/brave/policies/managed /etc/opt/edge/policies/managed; do
+    put "$dir/focuslock.json" "$json"
+  done
+}
+
+kill_banned() {
+  local name pattern=""
+  for name in $(grep -vE '^\s*(#|$)' "$SRC/banned-apps.txt"); do pattern+="$name|"; done
+  pattern=${pattern%|}
+  local pid comm exe
+  for pid in /proc/[0-9]*; do
+    pid=${pid#/proc/}
+    comm=$(cat /proc/$pid/comm 2>/dev/null) || continue
+    exe=$(readlink /proc/$pid/exe 2>/dev/null)
+    if [[ $comm =~ ^($pattern)$ ]] || [[ ${exe##*/} =~ ^($pattern)$ ]] || [[ $exe =~ (tor-browser|torbrowser|mullvad-browser) ]]; then
+      kill -9 "$pid" 2>/dev/null && logger -t focuslock-lockdown "killed $comm ($exe)"
+    fi
+  done
+}
+
+pass() { apply_hosts; apply_dns; apply_browser_policy; kill_banned; }
+
+if [[ ${1:-} == once ]]; then pass; exit 0; fi
+while true; do
+  pass
+  for _ in 1 2 3 4 5 6; do kill_banned; sleep 5; done   # kill fast, restore every 30 s
+done

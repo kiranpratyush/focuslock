@@ -1,0 +1,40 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: win64_msvc2022_64
+          cache: true
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Test
+        shell: pwsh
+        run: ./app/bin/test.ps1
+      - name: Build
+        shell: pwsh
+        run: ./app/bin/build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: focuslock-windows
+          path: app/dist
+
+  linux-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./... && GOOS=windows go vet ./... && go test ./...

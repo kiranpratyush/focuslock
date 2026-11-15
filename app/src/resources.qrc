@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="Main.qml">Main.qml</file>
+        <file alias="Bar.qml">Bar.qml</file>
+        <file alias="BlockCard.qml">BlockCard.qml</file>
+        <file alias="i18n/en.json">i18n/en.json</file>
+    </qresource>
+</RCC>

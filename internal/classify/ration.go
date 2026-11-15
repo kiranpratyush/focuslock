@@ -45,6 +45,14 @@ type RationStatus struct {
 	Visits  int
 }
 
+// SetClock makes the rations tell time with now instead of time.Now, so
+// they follow the same clock as the loop calling them.
+func (r *Rations) SetClock(now func() time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.now = now
+}
+
 // Match finds the rule for a window, if any. host is "" for apps.
 func (r *Rations) Match(proc, title, host, path string) *config.RationRule {
 	t := strings.ToLower(title)

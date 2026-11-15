@@ -2,7 +2,11 @@ module focuslock
 
 go 1.24.7
 
-require github.com/github/copilot-sdk/go v1.0.28
+require (
+	github.com/Microsoft/go-winio v0.6.2
+	github.com/github/copilot-sdk/go v1.0.28
+	golang.org/x/sys v0.10.0
+)
 
 require (
 	github.com/coder/websocket v1.8.15 // indirect

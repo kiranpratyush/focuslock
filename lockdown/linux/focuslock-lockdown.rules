@@ -1,0 +1,12 @@
+// Nobody but root may stop, restart, disable or mask the lockdown service,
+// so a password typed into the polkit popup can't turn it off.
+polkit.addRule(function (action, subject) {
+    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
+        subject.user != "root") {
+        var unit = action.lookup("unit") || "";
+        if (unit == "" || unit.indexOf("focuslock-lockdown") == 0) {
+            return polkit.Result.NO;
+        }
+    }
+});

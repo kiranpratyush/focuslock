@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+# Builds the Go engine and the Qt app into build/.
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build"
+
+(cd "$ROOT/.." && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$ROOT/build/focuslock-engine" ./cmd/focuslock)
+
+cd "$ROOT/build"
+qmake6 "$ROOT/focuslock.pro"
+make -j"$(nproc)"
+
+echo "Built $ROOT/build/focuslock and $ROOT/build/focuslock-engine"

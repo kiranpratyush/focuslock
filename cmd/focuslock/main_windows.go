@@ -3,24 +3,23 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"focuslock/internal/classify"
 	"focuslock/internal/config"
 	"focuslock/internal/judge"
 	"focuslock/internal/logx"
-	"focuslock/internal/session"
 )
 
 const (
 	guardExeName  = "focuslock-guard.exe"
 	workerExeName = "focuslock-worker.exe"
+	uiExeName     = "focuslock.exe" // the Qt app, beside this engine
 
 	DETACHED_PROCESS         = 0x00000008
 	CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -42,7 +41,14 @@ func main() {
 	case "start":
 		cmdStart(dir, args[1:])
 	case "status":
-		cmdStatus(dir)
+		if len(args) > 1 && args[1] == "--json" {
+			cmdStatusJSON(dir)
+		} else {
+			cmdStatus(dir)
+		}
+	case "last-setup":
+		// For the app's start window: what to pre-fill.
+		printJSON(config.LoadLastSetup(dir))
 	case "config":
 		_, _ = config.Load(dir)
 		fmt.Println(filepath.Join(dir, "focus.json"))
@@ -105,156 +111,19 @@ LM Studio, any OpenAI-compatible API), "copilot" (GitHub Copilot CLI), "jevos" (
 open-source Jev) or "none".`)
 }
 
-func cmdStart(dir string, args []string) {
-	if s, ok := session.ReadActive(dir); ok {
-		fmt.Printf("A session is already running: %s left.\n", session.FmtRemaining(s.Remaining()))
-		return
+// openUI starts the app's start window and leaves it running.
+func openUI(path string) error {
+	c := exec.Command(path, "open")
+	c.Env = os.Environ()
+	if err := c.Start(); err != nil {
+		return err
 	}
-	cfg, err := config.Load(dir)
-	if err != nil {
-		fatal(fmt.Errorf("focus.json: %w", err))
-	}
-
-	// Pre-fill from the last session, then from the command line.
-	setup := config.LoadLastSetup(dir)
-	prompt := true
-	var words []string
-	for _, a := range args {
-		if a == "--no-prompt" {
-			prompt = false
-		} else {
-			words = append(words, a)
-		}
-	}
-	if len(words) > 0 {
-		if _, err := parseDuration(words[0]); err == nil {
-			setup.Duration, words = words[0], words[1:]
-		}
-	}
-	if len(words) > 0 {
-		setup.Task = strings.Join(words, " ")
-	}
-	if prompt {
-		var ok bool
-		if setup, ok = askSetup(setup, cfg); !ok {
-			fmt.Println("Cancelled — no session started.")
-			return
-		}
-	}
-	d, err := parseDuration(setup.Duration)
-	if err != nil {
-		fatal(err)
-	}
-	config.SaveLastSetup(dir, setup)
-	intent := strings.TrimSpace(setup.Task)
-	detail := spellOutTask(cfg, intent)
-
-	// Two copies under different names: killing "focuslock.exe" by name
-	// doesn't touch them, and each one restarts the other.
-	self, err := os.Executable()
-	if err != nil {
-		fatal(err)
-	}
-	for _, name := range []string{guardExeName, workerExeName} {
-		if err := copyFile(self, filepath.Join(dir, name)); err != nil {
-			fatal(fmt.Errorf("copy %s: %w", name, err))
-		}
-	}
-
-	s := session.State{EndUnix: time.Now().Add(d).Unix(), BootUnix: session.BootTime().Unix(), Intent: intent, TaskDetail: detail,
-		AllowDomains: setup.AllowDomains, AllowApps: setup.AllowApps}
-	if err := session.Write(dir, s); err != nil {
-		fatal(err)
-	}
-	if _, err := spawn(filepath.Join(dir, guardExeName), "guard", "--peer", "0"); err != nil {
-		fatal(err)
-	}
-
-	fmt.Printf("Focus session started: %s (until %s).\n", session.FmtRemaining(d), s.End().Format("15:04"))
-	if intent != "" {
-		fmt.Printf("Task: %s\n", intent)
-	}
-	if len(s.AllowDomains)+len(s.AllowApps) > 0 {
-		fmt.Printf("Also allowed this session: %s\n", strings.Join(append(append([]string{}, s.AllowDomains...), s.AllowApps...), ", "))
-	}
-	fmt.Printf("Judge: %s\nLog: %s\n", judge.Status(cfg), filepath.Join(dir, "focuslock.log"))
-	if intent != "" && judge.New(cfg) == nil {
-		fmt.Println("Note: without a judge, the task is shown but can't be checked — only the rules apply.")
-	}
+	return c.Process.Release()
 }
 
-func cmdStatus(dir string) {
-	if s, ok := session.ReadActive(dir); ok {
-		fmt.Printf("%s left (ends %s).\n", session.FmtRemaining(s.Remaining()), s.End().Format("15:04"))
-		if s.Intent != "" {
-			fmt.Printf("Task: %s\n", s.Intent)
-		}
-		return
-	}
-	fmt.Println("No active session.")
-}
+func lookPath(name string) (string, error) { return exec.LookPath(name) }
 
-func parseDuration(s string) (time.Duration, error) {
-	s = strings.TrimSpace(s)
-	if n, err := strconv.Atoi(s); err == nil {
-		s = strconv.Itoa(n) + "m"
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil || d < time.Minute {
-		return 0, fmt.Errorf("invalid duration %q (use e.g. 50m, 1h30m, or 45)", s)
-	}
-	return d, nil
-}
-
-func dataDir() (string, error) {
-	base := os.Getenv("LOCALAPPDATA")
-	if base == "" {
-		var err error
-		if base, err = os.UserConfigDir(); err != nil {
-			return "", err
-		}
-	}
-	dir := filepath.Join(base, "FocusLock")
-	return dir, os.MkdirAll(dir, 0o755)
-}
-
-// spellOutTask asks a judge that can write (Copilot, an LLM) to describe
-// the task in four lines, before the session starts. On any problem the
-// task is used as written.
-func spellOutTask(cfg config.Config, task string) string {
-	if task == "" || !cfg.Judge.DescribeTask {
-		return ""
-	}
-	j := judge.New(cfg)
-	if _, ok := j.(judge.Describer); !ok {
-		return ""
-	}
-	if c, ok := j.(judge.Closer); ok {
-		defer c.Close()
-	}
-	fmt.Println("Asking the judge to spell out your task…")
-	detail, err := judge.Describe(cfg, j, task)
-	if err != nil {
-		fmt.Printf("Couldn't (%v); judging against the task as written.\n", err)
-		return ""
-	}
-	fmt.Println("The judge will check tabs and apps against:")
-	for _, l := range strings.Split(detail, "\n") {
-		fmt.Println("  " + l)
-	}
-	return detail
-}
-
-func setupLog(dir string) {
-	f, err := os.OpenFile(filepath.Join(dir, "focuslock.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	l := log.New(f, "", log.LstdFlags)
-	logx.Printf = func(format string, a ...any) { l.Printf(format, a...) }
-}
-
-func fatal(err error) {
-	fmt.Fprintln(os.Stderr, "error:", err)
-	os.Exit(1)
+func printJSON(v any) {
+	b, _ := json.Marshal(v)
+	fmt.Println(string(b))
 }
