@@ -12,7 +12,7 @@ f=(/usr/local/sbin/focuslock-enforce /etc/pacman.d/hooks/00-focuslock-ban.hook
    /etc/focuslock-lockdown/* /etc/hosts)
 chattr -i "${f[@]}" 2>/dev/null
 chattr -i /etc/NetworkManager/conf.d/20-omarchy-dns.conf 2>/dev/null
-rm -f "${f[@]:0:8}"; rm -rf /etc/focuslock-lockdown
+rm -f "${f[@]:0:8}"; rm -rf /etc/focuslock-lockdown /var/lib/focuslock-lockdown /run/focuslock-lockdown /usr/local/bin/focuslock-x
 sed -i '/^# >>> focuslock lockdown >>>$/,/^# <<< focuslock lockdown <<<$/d' /etc/hosts
 nft delete table inet focuslock 2>/dev/null
 systemctl daemon-reload; nmcli general reload dns-full

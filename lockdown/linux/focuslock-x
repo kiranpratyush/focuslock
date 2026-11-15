@@ -1,0 +1,18 @@
+#!/bin/sh
+# Open X for a while out of its daily budget (see budgets.txt).
+#   focuslock-x open | close | status
+RUN=/run/focuslock-lockdown
+name=${FOCUSLOCK_BUDGET:-x}
+case ${1:-status} in
+  open)
+    if grep -q ": 0 of" "$RUN/$name.status" 2>/dev/null; then cat "$RUN/$name.status"; exit 1; fi
+    touch "$RUN/$name.open" || exit 1
+    echo "Opening $name (takes up to 5 seconds)..."; sleep 6
+    cat "$RUN/$name.status"
+    echo "Post, then close it: focuslock-x close" ;;
+  close)
+    rm -f "$RUN/$name.open"; sleep 6; cat "$RUN/$name.status" ;;
+  status)
+    cat "$RUN/$name.status" 2>/dev/null || echo "The lockdown service isn't running." ;;
+  *) echo "use: focuslock-x open | close | status"; exit 2 ;;
+esac

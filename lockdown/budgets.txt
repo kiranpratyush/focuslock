@@ -1,0 +1,4 @@
+# Sites you can open for a daily time budget (laptop only).
+#   name  minutes-a-day  minutes-per-open  domains (must also be in blocklist.txt)
+# Open with "focuslock-x open"; the time counts only while it's open.
+x  120  30  x.com twitter.com
