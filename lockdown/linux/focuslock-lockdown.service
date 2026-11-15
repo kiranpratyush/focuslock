@@ -1,0 +1,14 @@
+[Unit]
+Description=FocusLock lockdown (DNS filter, site blocks, banned apps)
+After=network-pre.target NetworkManager.service
+Wants=network-pre.target
+# "systemctl stop" is refused, even with a password.
+RefuseManualStop=yes
+
+[Service]
+ExecStart=/usr/local/sbin/focuslock-enforce
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+# Programs killed on sight. Linux: matched against the process name and
+# command line. Windows: these .exe names are blocked from starting.
+firefox
+tor
+torbrowser-launcher
+tor-browser
+librewolf
+mullvad-browser
+mullvadbrowser
+waterfox
+opera
+vivaldi
+epiphany
+qutebrowser
+falkon
+midori
+protonvpn
+protonvpn-app
+warp-svc
+warp-cli
+nordvpn
+psiphon3
+windscribe

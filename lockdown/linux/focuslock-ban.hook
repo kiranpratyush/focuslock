@@ -1,0 +1,28 @@
+# Refuse to install escape-route packages.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = torbrowser-launcher
+Target = tor
+Target = tor-browser*
+Target = firefox*
+Target = librewolf*
+Target = mullvad-browser*
+Target = waterfox*
+Target = opera*
+Target = vivaldi*
+Target = epiphany
+Target = qutebrowser
+Target = falkon
+Target = proton-vpn*
+Target = protonvpn*
+Target = cloudflare-warp*
+Target = nordvpn*
+Target = windscribe*
+
+[Action]
+Description = FocusLock: this package is blocked.
+When = PreTransaction
+Exec = /usr/bin/false
+AbortOnFail

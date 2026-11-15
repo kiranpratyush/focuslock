@@ -1,0 +1,64 @@
+# Sites blocked everywhere (hosts file + browser policy). One domain per line;
+# www./m. variants are added automatically. Lines starting with # are ignored.
+
+# video / feeds
+youtube.com
+youtu.be
+youtube-nocookie.com
+youtubei.googleapis.com
+ytimg.com
+googlevideo.com
+instagram.com
+cdninstagram.com
+facebook.com
+fb.com
+tiktok.com
+reddit.com
+redd.it
+twitter.com
+x.com
+twitch.tv
+netflix.com
+primevideo.com
+hotstar.com
+jiocinema.com
+9gag.com
+
+# adult (the DNS filter catches the rest)
+pornhub.com
+xvideos.com
+xnxx.com
+xhamster.com
+onlyfans.com
+redtube.com
+youporn.com
+spankbang.com
+eporner.com
+rule34.xxx
+
+# escape routes: tor, vpn, proxies, other browsers
+torproject.org
+mullvad.net
+protonvpn.com
+nordvpn.com
+expressvpn.com
+psiphon.ca
+windscribe.com
+hide.me
+croxyproxy.com
+hidester.com
+kproxy.com
+proxysite.com
+librewolf.net
+opera.com
+vivaldi.com
+
+# public DNS-over-HTTPS (would skip the filter)
+dns.google
+cloudflare-dns.com
+mozilla.cloudflare-dns.com
+one.one.one.one
+dns.quad9.net
+doh.opendns.com
+dns.nextdns.io
+dns.adguard-dns.com
