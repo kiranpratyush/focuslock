@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# FocusLock for a supervised iPad, driven from this laptop over USB.
+#
+#   ipad keybag FILE      make the supervision keybag (the master key; keep it away from you)
+#   ipad supervise FILE   supervise a freshly erased iPad (at the Hello screen)
+#   ipad apply FILE       install the lock (filter, blocked apps, no installs)
+#   ipad release FILE     lift "no installs" so one app can be installed; run apply after
+#   ipad status           list installed profiles
+#
+# FILE is the keybag. Needs usbmuxd (sudo pacman -S usbmuxd) and pymobiledevice3
+# (uv tool install pymobiledevice3).
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+pmd=(pymobiledevice3)
+cmd=${1:-}; keybag=${2:-}
+
+need_keybag() { [[ -n $keybag && -f $keybag ]] || { echo "give the keybag file: ipad $cmd FILE"; exit 1; }; }
+
+case $cmd in
+  keybag)
+    [[ -n $keybag ]] || { echo "ipad keybag FILE"; exit 1; }
+    [[ -e $keybag ]] && { echo "$keybag already exists"; exit 1; }
+    "${pmd[@]}" profile create-keybag "$keybag" FocusLock
+    chmod 600 "$keybag"
+    echo "keybag written to $keybag. After setup, hand it to someone else and delete your copy." ;;
+  supervise)
+    need_keybag
+    "${pmd[@]}" profile supervise FocusLock --keybag "$keybag"
+    echo "supervised. Finish setup on the iPad, sign in to your Apple ID, then: ipad apply $keybag" ;;
+  apply)
+    need_keybag
+    out=$(mktemp -d); trap 'rm -rf "$out"' EXIT
+    python3 -I "$here/profiles.py" "$out"
+    # One profile per call: a second silent install in the same session is
+    # rejected ("Escalate is not a valid request type").
+    for p in lock noinstall; do
+      "${pmd[@]}" profile install --keybag "$keybag" "$out/focuslock-$p.mobileconfig"
+    done
+    echo "locked." ;;
+  release)
+    need_keybag
+    "${pmd[@]}" profile remove dev.focuslock.ipad.noinstall
+    echo "App Store installs are open. Install the app, then: ipad apply $keybag" ;;
+  status)
+    "${pmd[@]}" profile list | grep -E '"PayloadIdentifier"|"PayloadDisplayName"|IsSupervised' || "${pmd[@]}" profile list ;;
+  *) sed -n 2,12p "$0"; exit 1 ;;
+esac

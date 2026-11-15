@@ -1,4 +1,103 @@
-# FocusLock v1
+# FocusLock
+
+FocusLock is a set of tools for one job: **making distractions hard to reach on every device you own**, so that staying focused doesn't depend on willpower in the moment.
+
+It has two parts that work together:
+
+| Part | What it does | When it's active | Where |
+|---|---|---|---|
+| **1. The focus timer** | You start a timed session ("50 minutes: fix the pagination bug"). Until it ends, it covers and closes distracting tabs, kills games, and uses an AI "judge" to decide whether a page is on task. | Only during a session you start | Windows and Linux laptops (`cmd/`, `internal/`, `app/`) |
+| **2. The lockdown** | Always-on rules: adult sites filtered by DNS, YouTube/Instagram/Reddit/... blocked, other browsers and VPNs banned, no way to switch it off without admin rights or a key someone else holds. | All the time | Linux, Windows, Android phones and tablets, iPad, and the home router (`lockdown/`, `android/`) |
+
+Think of it as layers, from the outside in:
+
+```
+ ┌──────────────────────────────────────────────────────────────────────────┐
+ │ Layer 1  Home router (TP-Link)    every device on the Wi-Fi gets the     │
+ │                                   CleanBrowsing adult-filter DNS         │
+ │  ┌────────────────────────────────────────────────────────────────────┐  │
+ │  │ Layer 2  Each device's own lockdown  (works on any network)        │  │
+ │  │   Linux laptop    root systemd service      lockdown/linux/        │  │
+ │  │   Windows laptop  SYSTEM scheduled task     lockdown/windows/      │  │
+ │  │   Android         Device Owner app          android/               │  │
+ │  │   iPad            supervised + profiles     lockdown/ios/          │  │
+ │  │  ┌──────────────────────────────────────────────────────────────┐  │  │
+ │  │  │ Layer 3  Focus timer session (laptops, when you start one)   │  │  │
+ │  │  │   judges every tab and app against your task                 │  │  │
+ │  │  └──────────────────────────────────────────────────────────────┘  │  │
+ │  └────────────────────────────────────────────────────────────────────┘  │
+ └──────────────────────────────────────────────────────────────────────────┘
+```
+
+Each layer covers a gap in the one outside it:
+- The router can't stop a device from using its own DNS, and does nothing on mobile data.
+- A device's lockdown can block known sites, but it can't tell a useful YouTube lecture from a time-wasting one.
+- The focus timer can, but only while a session is running.
+
+## Contents
+
+- [Start here (new to the code?)](#start-here-new-to-the-code)
+- [Repository map](#repository-map)
+- **Part 1: [The focus timer](#part-1-the-focus-timer)** (Windows and Linux)
+- **Part 2: [The lockdown](#part-2-the-lockdown)**: [shared rules](#the-shared-rule-files), [Linux](#linux-lockdown), [Windows](#windows-lockdown), [Android](#android-lockdown), [iPad](#ipad-lockdown), [router](#router-layer), [time budgets](#time-budgets-x-on-the-laptop), [undoing it](#undoing-the-lockdown), [known gaps](#known-gaps)
+- [Working on the codebase](#working-on-the-codebase)
+
+## Start here (new to the code?)
+
+A few ideas come up everywhere in this repo. If they're new to you, read these first:
+
+| Term | Meaning here |
+|---|---|
+| **DNS** | The phone book of the internet: it turns `youtube.com` into an IP address. If DNS refuses to answer, the site doesn't load. We use **CleanBrowsing's Adult filter** (`185.228.168.10`, `185.228.169.11`), a free DNS service that refuses to answer for adult sites. |
+| **DoH / DoT** | DNS over HTTPS / TLS: encrypted DNS. Good for privacy, but a browser using its own DoH would skip our filter, so the lockdown turns it off in browsers and blocks the well-known public DoH servers. |
+| **hosts file** | A local list (`/etc/hosts`, `C:\Windows\System32\drivers\etc\hosts`) that the computer checks before DNS. Pointing `youtube.com` at `0.0.0.0` makes it unreachable. |
+| **Browser policy** | Settings an administrator can force on Chrome, Chromium, Brave and Edge (`chrome://policy` shows them): a URL blocklist, no Incognito, SafeSearch, no new extensions. |
+| **Enforcer loop** | Instead of setting things once, a privileged background process puts every rule back every 30–60 seconds, so editing a file by hand only works until the next pass. |
+| **Device Owner** (Android) | The strongest role an Android app can have. It can block installs, factory reset, VPNs, and hide apps. It can only be set over USB (`adb`) on a phone with no accounts. |
+| **Supervision** (iPad) | Apple's equivalent of Device Owner. It needs the iPad to be erased, and unlocks profiles that can't be removed and stronger restrictions. |
+| **Judge** | In the focus timer, an AI model asked "is this page about the user's task?" when the simple rules can't decide. |
+
+**What you need, by part:**
+
+| To work on | You need | Build / try it |
+|---|---|---|
+| Focus timer (Go engine) | Go 1.24+ | `go test ./...` (runs on any OS) |
+| Focus timer (Qt app) | Qt 6, and on Linux `layer-shell-qt` | `bash setup.sh` (Linux) or `setup.ps1` (Windows) |
+| Linux lockdown | Bash, root, Arch-based distro (pacman, NetworkManager, nftables) | read `lockdown/linux/focuslock-enforce`; **don't install it on a machine you aren't ready to lock** |
+| Windows lockdown | PowerShell as Administrator | read `lockdown/windows/enforce.ps1` |
+| Android app | Android SDK (build-tools, a platform), JDK, `adb` | `android/build.sh` (no Gradle) |
+| iPad | `usbmuxd`, `pymobiledevice3` (`uv tool install pymobiledevice3`) | `lockdown/ios/ipad` |
+
+## Repository map
+
+```
+focuslock/
+├── README.md               this file
+├── setup.sh, setup.ps1     one-command install of the focus timer (Linux, Windows)
+├── go.mod, go.sum          Go module for the focus timer engine
+├── cmd/focuslock/          focus timer engine: CLI, guard/worker processes, OS layer
+├── internal/               focus timer logic, portable Go (engine, classify, judge, config, ...)
+├── app/                    focus timer UI: Qt Quick start window, top bar, block screens
+├── docs/                   demo GIF and promo video
+├── android/                FocusLock for Android: a Device Owner app (Java, no Gradle)
+│   ├── build.sh            aapt2 + javac + d8 + apksigner → build/focuslock.apk
+│   ├── AndroidManifest.xml
+│   └── src/dev/focuslock/phone/
+│       ├── Policy.java          the rules: restrictions, hidden apps, Private DNS, Chrome policy
+│       ├── CommandReceiver.java adb broadcast commands (APPLY, RELEASE, ALLOW, LIMIT, FINAL_LOCK)
+│       ├── UsageWatcher.java    daily YouTube time limit
+│       ├── MainActivity.java    the screen that shows what's active
+│       └── AdminReceiver.java   the Device Admin hook Android needs
+└── lockdown/               the always-on lockdown
+    ├── blocklist.txt       sites blocked everywhere (one domain per line)
+    ├── banned-apps.txt     programs killed on sight on the laptops
+    ├── budgets.txt         sites you may open for a daily time budget (laptops)
+    ├── linux/              root systemd service, enforcer script, polkit rule, pacman hook
+    ├── windows/            SYSTEM scheduled task, enforcer script
+    └── ios/                iPad: supervision and lock profiles via pymobiledevice3
+```
+
+# Part 1: The focus timer
 
 A focus timer for Windows and Linux (Hyprland) you can't casually stop. While a session runs it:
 
@@ -368,3 +467,248 @@ Imports only point downward: `cmd` → `engine` → `classify` → `judge` → `
 | | `Main.qml`, `Bar.qml`, `BlockCard.qml` | the start window, the bar, a block screen |
 
 Tests sit next to the code they test (`*_test.go`): `go test ./...`
+
+# Part 2: The lockdown
+
+The focus timer only works while a session runs. The lockdown is the opposite: it is **always on**, it doesn't judge anything, and it is built so that turning it off takes real effort: admin rights, a USB cable plus a key file someone else holds, or a factory reset.
+
+All of it follows the same recipe on every platform:
+
+1. **Filter DNS** through CleanBrowsing's Adult filter, and stop the device from asking any other DNS server (including encrypted DNS).
+2. **Block a list of sites** (`lockdown/blocklist.txt`) on top of that, in the hosts file and/or browser policy.
+3. **Ban escape routes**: other browsers, Tor, VPNs, proxies, new extensions, Incognito.
+4. **Protect the protection**: run as root/SYSTEM/Device Owner/supervisor, put rules back automatically, and refuse the normal ways of switching it off.
+
+| Platform | How it gets its power | How it keeps rules in place | Folder |
+|---|---|---|---|
+| Linux (Arch/Omarchy) | root systemd service | enforcer loop every 30 s, immutable files (`chattr +i`), polkit rule, `RefuseManualStop` | `lockdown/linux/` |
+| Windows | scheduled task as SYSTEM | enforcer loop every 60 s, folder writable only by admins | `lockdown/windows/` |
+| Android | Device Owner app | Android itself enforces Device Owner restrictions | `android/` |
+| iPad | supervision + profiles | iPadOS enforces profiles that can't be removed | `lockdown/ios/` |
+| Router | router admin password | the router's own settings | (no code; settings below) |
+
+## The shared rule files
+
+Every platform reads the same lists from `lockdown/`, so a site added once is blocked everywhere after the next install/apply.
+
+| File | Format | Used by |
+|---|---|---|
+| `blocklist.txt` | One domain per line, `#` comments. `www.` and `m.` are added automatically. | Linux and Windows (hosts file + browser `URLBlocklist`), Android (Chrome `URLBlocklist`; packed into the APK by `build.sh`), iPad (web filter deny list; YouTube left out there) |
+| `banned-apps.txt` | One program name per line | Linux (killed if the process name matches), Windows (blocked from starting through Image File Execution Options, and killed) |
+| `budgets.txt` | `name  minutes-a-day  minutes-per-open  domains...` | Linux and Windows: sites you may open for a limited time (see [time budgets](#time-budgets-x-on-the-laptop)) |
+
+The Android app has its own list of hidden apps and the iPad its own list of blocked app IDs, because those are app package/bundle IDs rather than domains: `HIDDEN` in `android/src/dev/focuslock/phone/Policy.java` and `BLOCKED_APPS` in `lockdown/ios/profiles.py`.
+
+**To change what's blocked:** edit the file, then re-run the platform's installer (Linux, Windows), rebuild and reinstall the app (Android), or run `ipad apply` (iPad). The installed copies are protected, so editing them in place doesn't work.
+
+## Linux lockdown
+
+**Install:** `sudo bash lockdown/linux/install.sh`
+
+What `install.sh` does, step by step:
+1. Uninstalls escape-route packages (Tor, Firefox, LibreWolf, Mullvad Browser).
+2. Copies the three rule files to `/etc/focuslock-lockdown/`. It also records your current browser extensions as the only ones allowed, then makes the folder immutable.
+3. Installs:
+   - `focuslock-enforce` → `/usr/local/sbin/`: the enforcer.
+   - `focuslock-x` → `/usr/local/bin/`: opens a time budget.
+   - `focuslock-ban.hook` → `/etc/pacman.d/hooks/`: pacman refuses to install banned packages.
+   - `focuslock-lockdown.service` → systemd, with `Restart=always` and `RefuseManualStop=yes`, so `systemctl stop` is refused.
+   - `focuslock-lockdown.rules` → polkit: no non-root user can stop, disable or mask the service, even by typing a password into the popup.
+4. Makes those files immutable, enables and starts the service, and runs one pass right away.
+
+**What the enforcer (`focuslock-enforce`) does.** It runs as root in a loop: every 30 seconds it runs a full pass, and every 5 seconds it kills banned programs and updates the time budgets.
+
+| Function | What it enforces |
+|---|---|
+| `apply_hosts` | A marked block in `/etc/hosts` pointing every blocked domain (and `www.`/`m.`) at `0.0.0.0` |
+| `apply_dns` | NetworkManager global DNS = CleanBrowsing, plus an **nftables** table `inet focuslock` that rewrites *every* outgoing port-53 query to CleanBrowsing, drops IPv6 DNS, DNS-over-TLS (port 853) and the well-known DoH servers |
+| `apply_browser_policy` | Managed policy JSON for Chromium, Chrome, Brave and Edge: URL blocklist, no Incognito/guest/new profiles, DoH off, SafeSearch, YouTube Restricted Mode, Tor and Brave VPN off, no new extensions |
+| `kill_banned` | `kill -9` any process whose name or executable is in `banned-apps.txt`, or that looks like Tor/Mullvad Browser |
+| `budget_tick` | Time budgets (below) |
+
+The helper `put` writes a file only when it changed, logs `restored <file>` to the journal, and sets it immutable again. That is why hand edits come back within 30 seconds. See it working with `journalctl -t focuslock-lockdown`.
+
+**Remove:** `sudo bash lockdown/linux/uninstall.sh`. It needs root, on purpose.
+
+## Windows lockdown
+
+**Install:** in an **Administrator** PowerShell, `powershell -ExecutionPolicy Bypass -File lockdown\windows\install.ps1`
+
+1. Copies `enforce.ps1` and the rule files to `C:\ProgramData\FocusLockLockdown\`. Only SYSTEM and Administrators can change them; normal users can read.
+2. Records existing browser extensions as allowed, puts `focuslock-x` on the PATH, and removes per-user Tor Browser.
+3. Registers the **"FocusLock Lockdown"** scheduled task, which runs as SYSTEM at startup and every minute. It starts `enforce.ps1 -Loop`, which keeps running; the every-minute trigger restarts it if it's ever stopped.
+
+`enforce.ps1` mirrors the Linux enforcer:
+- **Hosts:** the hosts file gets the same marked block.
+- **DNS:**
+  - Every active adapter uses CleanBrowsing.
+  - Windows' own DoH is prohibited.
+  - Firewall rules block DNS to anything but the filter, plus DNS-over-TLS, the known DoH servers and IPv6 DNS.
+- **Browser policy:** registry policies for Chrome, Edge and Brave (the same settings as Linux, plus `QuicAllowed=0`).
+- **Banned apps:** blocked from launching (Image File Execution Options), and killed if running.
+- **Time budgets:** like Linux, with firewall rules cutting off a budget site's servers once it closes.
+
+**The important last step:** make your everyday Windows account a **Standard** user. An administrator can simply run `uninstall.ps1`.
+
+**Known hole:** WSL (Linux inside Windows) has its own network setup and isn't covered by the Windows lockdown.
+
+## Android lockdown
+
+FocusLock for Android (`android/`) is a small Java app that becomes the phone's **Device Owner**. It is built without Gradle: `android/build.sh` calls the SDK tools (`aapt2`, `javac`, `d8`, `zipalign`, `apksigner`) directly and signs with one key kept in `~/.config/FocusLock/android.keystore`, so updates install over the old version.
+
+**What it enforces** (`Policy.apply`):
+- **Blocked in Settings:** installing apps, factory reset, safe mode, new users, work profiles, Private Space, VPN setup, Private DNS changes, date/time changes, clearing or disabling apps.
+- **Private DNS** forced to `adult-filter-dns.cleanbrowsing.org`.
+- **Hidden apps** (as good as uninstalled): YouTube, Instagram, Facebook, TikTok, Reddit, X, Snapchat, Netflix, other browsers, VPNs. The list is `HIDDEN`.
+- **Chrome** becomes the only browser. Its policy turns off Incognito and DoH, forces SafeSearch and YouTube Restricted Mode, and applies the `blocklist.txt` URL blocklist. Chrome can't be uninstalled.
+- **YouTube allowed with a daily limit** (optional, per phone): `UsageWatcher` adds up YouTube's foreground time since midnight every 30 seconds. At the limit it suspends YouTube and blocks its site in Chrome until midnight.
+
+**Set up a phone** (USB debugging on, and **no Google or other accounts on the phone**, which Android requires before it will set a Device Owner):
+```
+android/build.sh
+adb install -t android/build/focuslock.apk          # -t: the app is marked testOnly
+adb shell dpm set-device-owner dev.focuslock.phone/.AdminReceiver
+adb shell am start -n dev.focuslock.phone/.MainActivity   # applies the rules and shows them
+```
+Then sign back in to your accounts.
+
+**Commands** are adb broadcasts handled by `CommandReceiver`:
+```
+adb shell am broadcast -n dev.focuslock.phone/.CommandReceiver -a dev.focuslock.phone.APPLY
+adb shell am broadcast -n dev.focuslock.phone/.CommandReceiver -a dev.focuslock.phone.RELEASE
+adb shell am broadcast -n dev.focuslock.phone/.CommandReceiver -a dev.focuslock.phone.ALLOW --es packages com.google.android.youtube
+adb shell am broadcast -n dev.focuslock.phone/.CommandReceiver -a dev.focuslock.phone.LIMIT --ei youtube_minutes 60
+adb shell am broadcast -n dev.focuslock.phone/.CommandReceiver -a dev.focuslock.phone.FINAL_LOCK
+```
+| Command | Effect |
+|---|---|
+| `APPLY` | (Re)apply every rule. It also runs at boot and after an app update. |
+| `RELEASE` | Test mode only: lift everything, e.g. to install an app. Run `APPLY` afterwards. |
+| `ALLOW` | Per-phone exceptions, e.g. YouTube on a family phone |
+| `LIMIT` | Daily YouTube minutes. The limit needs usage access first: `adb shell appops set dev.focuslock.phone GET_USAGE_STATS allow` |
+| `FINAL_LOCK` | **One way.** Turns off USB debugging and developer options for good; after this the limit can only go down. |
+
+**Installing an app later:** `RELEASE` → install it → `APPLY`.
+
+**Android 15 note:** a broadcast runs in the background without network access. So Private DNS (which Android checks over the network) only gets set when the app's screen is opened with `am start`.
+
+## iPad lockdown
+
+iPadOS doesn't let an app take control like Android's Device Owner. The equivalent is **supervision**, which normally needs a Mac with Apple Configurator. We do it from Linux with [`pymobiledevice3`](https://github.com/doronz88/pymobiledevice3). Everything is in `lockdown/ios/`:
+
+- `profiles.py` writes two configuration profiles (`.mobileconfig` files, which are XML property lists):
+  - **`focuslock-lock`**:
+    - Encrypted DNS through CleanBrowsing that can't be turned off.
+    - Apple's built-in adult web filter, plus `blocklist.txt` as a deny list (YouTube left out).
+    - Blocked app IDs: Instagram, X, Reddit, other browsers, VPNs and so on.
+    - Restrictions: no Erase All Content and Settings, no new profiles, no VPN setup, no account changes, no iCloud Private Relay, no App Clips.
+  - **`focuslock-noinstall`**: no installing or deleting apps. It's separate so it can be lifted for a moment to install an app.
+  - Both are marked non-removable, which iPadOS honours on a supervised device.
+- `ipad` is the controller script:
+  ```
+  lockdown/ios/ipad keybag FILE      make the supervision identity (the master key)
+  lockdown/ios/ipad supervise FILE   supervise an erased iPad sitting at the Hello screen
+  lockdown/ios/ipad apply FILE       install both profiles silently
+  lockdown/ios/ipad release FILE     remove "no installs" so one app can be installed; then apply again
+  lockdown/ios/ipad status           list installed profiles
+  ```
+
+**Set up an iPad**:
+1. `sudo pacman -S usbmuxd` and `uv tool install pymobiledevice3`.
+2. Back up the iPad to iCloud.
+3. Erase it on the iPad, signing out of Find My when asked.
+4. With the iPad at **Hello** and plugged in: `ipad keybag ~/focuslock-ipad-keybag.pem`, then `ipad supervise ~/focuslock-ipad-keybag.pem`.
+5. Finish setup on the iPad: restore the backup, sign in to the Apple ID, install every app you want (account changes and installs are blocked afterwards).
+6. `ipad apply ~/focuslock-ipad-keybag.pem`.
+7. **YouTube daily limit:** profiles can't set time limits, so use Screen Time → App Limits on the iPad, with a passcode someone else sets.
+8. Hand the keybag to someone else and delete your copy. Whoever holds it can unlock the iPad.
+
+**Implementation note:** the iPad rejects a second silent install in the same connection ("Escalate is not a valid request type"), so `apply` installs one profile per `pymobiledevice3` call.
+
+**Gap:** restoring the iPad from a computer in DFU mode wipes supervision, together with everything else on it.
+
+## Router layer
+
+No code, just settings on the home router (a TP-Link Archer C6, admin page at `192.168.0.1`). It covers every device on the home Wi-Fi, including guests and anything not locked down itself.
+
+| Setting | Where | Value |
+|---|---|---|
+| DNS handed to devices | Advanced → Network → DHCP Server → Primary/Secondary DNS | `185.228.168.10` / `185.228.169.11` |
+| The router's own DNS | Advanced → Network → Internet → Advanced Settings → DNS Address: "Use the Following DNS Addresses" | same two |
+| IPv6 | Advanced → IPv6 | Disabled (IPv6 DNS from the ISP would skip the filter) |
+| Admin password | Advanced → System → Administration | known only to someone else |
+
+Only adult content is filtered at the router. YouTube and other sites are handled per device.
+
+## Time budgets (X on the laptop)
+
+Some sites are useful in small doses. `budgets.txt` lists them. The default is X: **120 minutes a day, at most 30 minutes per opening**.
+
+```
+focuslock-x open      opens X (takes up to 5 seconds)
+focuslock-x status    time left this opening and today
+focuslock-x close     closes it early
+```
+How it works:
+1. `focuslock-x` runs as your normal user. All it can do is drop a request file: `/run/focuslock-lockdown/x.open` on Linux, `C:\ProgramData\FocusLockLockdown\requests\x.open` on Windows.
+2. The root/SYSTEM enforcer sees it and takes the domains out of the hosts file and browser blocklist. It adds up the time in a root-only state folder.
+3. When the opening or the day runs out, the enforcer removes the request, puts the blocks back, and **blocks the servers' IP addresses** it learned while the site was open. That way a tab that's already open stops working too, instead of only new page loads.
+
+## Undoing the lockdown
+
+| Platform | How | What it needs |
+|---|---|---|
+| Linux | `sudo bash lockdown/linux/uninstall.sh` | root password |
+| Windows | `lockdown\windows\uninstall.ps1` as Administrator | admin account |
+| Android (test mode) | `RELEASE` broadcast, then `adb shell dpm remove-active-admin dev.focuslock.phone/.AdminReceiver` | USB debugging (gone after `FINAL_LOCK`) |
+| iPad | `pymobiledevice3 profile remove dev.focuslock.ipad.lock` (and `.noinstall`) from the paired laptop | the paired laptop and the keybag |
+| Router | DHCP DNS back to `0.0.0.0`, Internet DNS back to "Get Dynamically from ISP" | router admin password |
+
+The real lock is **who holds those passwords and keys**. While you can type the root password, admin password, router password or keybag path yourself, the lockdown is a speed bump, not a wall. The intended next steps, in order:
+1. A time-locked vault for the sudo password.
+2. A family member holds the router and admin passwords and the iPad keybag.
+3. Standard (not admin) Windows accounts.
+4. `FINAL_LOCK` on the phones.
+
+## Known gaps
+
+| Gap | Why | Covered by |
+|---|---|---|
+| Admin/root can undo everything | Admin rights are needed to uninstall | Someone else holds the passwords |
+| WSL on Windows | Separate network setup | Not covered yet |
+| Router does nothing on mobile data or other Wi-Fi | It's the router | Each device's own lockdown |
+| A device can set its own DNS on the home Wi-Fi | The router can't force DNS | The device lockdowns force it themselves |
+| iPad DFU restore | Apple allows it on any device | Takes a deliberate full wipe |
+| Android before `FINAL_LOCK` | USB debugging can release it | `FINAL_LOCK` |
+| YouTube's useful vs useless videos | Site blocks are all-or-nothing | The focus timer's judge, on the laptop |
+
+# Working on the codebase
+
+**Ground rules:**
+- **Never stop, kill or uninstall a live lockdown to test something.** Test on a VM or a spare device, or read the code. To see what an enforcer does, read its log: `journalctl -t focuslock-lockdown` on Linux, Task Scheduler history on Windows, `adb logcat -s FocusLock` on Android.
+- **Rules are data, enforcement is code.** To block a new site, edit `lockdown/blocklist.txt`, not the scripts.
+- **Keep the platforms in step.** A feature like time budgets exists on both Linux (`focuslock-enforce`) and Windows (`enforce.ps1`), written the same way so they're easy to compare. Change both.
+- **Don't commit secrets or personal device details:** keybags, keystores, passwords, serial numbers. `android/build/` is ignored; keep the iPad keybag outside the repo.
+- Each script starts with a comment saying what it does and how to run it. Keep it that way.
+
+**Focus timer:**
+- `go test ./...` runs every decision test on any OS.
+- `app/bin/test` (Linux) or `app\bin\test.ps1` (Windows) also runs the Qt tests.
+- CI (`.github/workflows/build.yml`) builds and tests the Windows version on every push.
+- The best first read is `internal/engine/engine.go` (`Tick`), then `internal/classify/classify.go`. See [Architecture](#architecture) and [Code map](#code-map).
+
+**Lockdown scripts:**
+- Linux: `bash -n lockdown/linux/focuslock-enforce` checks syntax. The function to start with is `pass()` at the bottom, which calls everything else.
+- Windows: start at `Apply-All` near the bottom of `enforce.ps1`.
+
+**Android:** `android/build.sh` builds it. Start reading at `Policy.apply`, which is the whole rule set in one function. Commands arrive through `CommandReceiver.onReceive`.
+
+**iPad:** `python3 profiles.py OUT_DIR` writes the profiles, so you can inspect them without a device (`plutil -p` on a Mac, or Python's `plistlib`). Profile keys are documented in Apple's [Device Management](https://developer.apple.com/documentation/devicemanagement) reference (look up `Restrictions`, `DNSSettings`, `WebContentFilter`).
+
+**Adding a new platform** (the recipe every one follows):
+1. Find the strongest role the OS gives you: root, SYSTEM, Device Owner, supervision.
+2. Force DNS to the filter and block other DNS routes.
+3. Apply `blocklist.txt`.
+4. Ban other browsers and VPNs.
+5. Protect it from being switched off.
+6. Write the uninstall path, and document it in this README.
