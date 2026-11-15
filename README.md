@@ -27,6 +27,8 @@ The engine's worker starts the app's bar and talks to it over a private local so
 
 ## Windows
 
+**One command:** `powershell -ExecutionPolicy Bypass -File setup.ps1` installs whatever is missing (Git, Go, Visual Studio C++ Build Tools, Qt 6 via aqtinstall), then builds and installs FocusLock. Or do it by hand:
+
 Needs Go 1.24+, Qt 6 for MSVC (its `bin` on PATH), and a Visual Studio developer PowerShell.
 
 ```
@@ -38,6 +40,8 @@ app\bin\install.ps1    # into %LOCALAPPDATA%\Programs\FocusLock, a Start menu en
 Every push also builds it on GitHub Actions (`.github/workflows/build.yml`); the `focuslock-windows` artifact is a ready `dist` folder. On Windows, use `focuslock-engine` for commands whose output you want to read in a terminal, since `focuslock` is a windowed program.
 
 ## Linux (Omarchy / Hyprland)
+
+**One command:** `bash setup.sh` installs the missing packages with pacman (Go, Qt 6, layer-shell-qt, base-devel), then builds and installs FocusLock. Or do it by hand:
 
 ```
 cd app
