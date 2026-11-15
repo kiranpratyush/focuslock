@@ -37,12 +37,12 @@ $fw = @(
 $notFilter = @('1.0.0.0-185.228.168.9','185.228.168.11-185.228.169.10','185.228.169.12-223.255.255.255')
 foreach ($r in $fw) {
     $addr = if ($r.A) { $r.A } else { $notFilter }
-    Remove-NetFirewallRule -DisplayName $r.N
+    Remove-NetFirewallRule -DisplayName $r.N -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName $r.N -Direction Outbound -Action Block -Protocol $r.P -RemotePort $r.Port -RemoteAddress $addr | Out-Null
 }
 # IPv6 DNS (from the router) would skip the filter too.
 foreach ($pr in 'UDP','TCP') {
-    Remove-NetFirewallRule -DisplayName "FocusLock: IPv6 DNS ($pr)"
+    Remove-NetFirewallRule -DisplayName "FocusLock: IPv6 DNS ($pr)" -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName "FocusLock: IPv6 DNS ($pr)" -Direction Outbound -Action Block -Protocol $pr -RemotePort 53,853 -RemoteAddress '2000::/3' | Out-Null
 }
 
@@ -59,7 +59,7 @@ foreach ($base in 'HKLM:\SOFTWARE\Policies\Google\Chrome','HKLM:\SOFTWARE\Polici
     }
     $lists = @{ URLBlocklist=$Domains; ExtensionInstallBlocklist=@('*'); ExtensionInstallAllowlist=$ext }
     foreach ($n in $lists.Keys) {
-        Remove-Item "$base\$n" -Recurse -Force; New-Item "$base\$n" -Force | Out-Null
+        Remove-Item "$base\$n" -Recurse -Force -ErrorAction SilentlyContinue; New-Item "$base\$n" -Force | Out-Null
         $i = 1; foreach ($v in $lists[$n]) { Set-ItemProperty "$base\$n" "$i" $v -Type String; $i++ }
     }
 }
@@ -69,6 +69,6 @@ $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution
 foreach ($b in $Banned) {
     New-Item "$ifeo\$b.exe" -Force | Out-Null
     Set-ItemProperty "$ifeo\$b.exe" Debugger 'C:\ProgramData\FocusLockLockdown\blocked.exe'
-    Get-Process -Name $b | Stop-Process -Force
+    Get-Process -Name $b -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 Get-Process | Where-Object { $_.Path -match 'Tor Browser|tor-browser|Mullvad Browser' } | Stop-Process -Force
