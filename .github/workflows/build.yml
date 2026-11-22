@@ -10,6 +10,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test the lockdown
+        shell: powershell
+        run: ./lockdown/windows/test.ps1
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -38,3 +41,4 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./... && GOOS=windows go vet ./... && go test ./...
+      - run: bash lockdown/linux/test.sh

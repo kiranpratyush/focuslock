@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Install the FocusLock lockdown. Run: sudo bash lockdown/linux/install.sh
+#   --no-budgets   no time budgets (removes installed ones): X stays fully blocked
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 user=${SUDO_USER:-}
+budgets=1; [[ ${1:-} == --no-budgets ]] && budgets=0
 
 echo "== removing escape-route packages"
 for p in torbrowser-launcher tor firefox librewolf mullvad-browser-bin; do
@@ -13,7 +15,12 @@ done
 echo "== copying rules to /etc/focuslock-lockdown"
 mkdir -p /etc/focuslock-lockdown
 chattr -i /etc/focuslock-lockdown/* 2>/dev/null || true
-cp "$here/../blocklist.txt" "$here/../banned-apps.txt" "$here/../budgets.txt" /etc/focuslock-lockdown/
+cp "$here/../blocklist.txt" "$here/../banned-apps.txt" "$here/../banned-paths.txt" /etc/focuslock-lockdown/
+if (( budgets )); then
+  cp "$here/../budgets.txt" /etc/focuslock-lockdown/
+else
+  rm -f /etc/focuslock-lockdown/budgets.txt /usr/local/bin/focuslock-x
+fi
 # Keep the browser extensions you already have; block installing new ones.
 if [[ -n $user ]]; then
   home=$(getent passwd "$user" | cut -d: -f6)
@@ -24,15 +31,16 @@ chattr +i /etc/focuslock-lockdown/*
 
 echo "== installing enforcer, pacman hook, service"
 chattr -i /usr/local/sbin/focuslock-enforce /etc/pacman.d/hooks/00-focuslock-ban.hook \
-          /etc/systemd/system/focuslock-lockdown.service 2>/dev/null || true
+          /etc/pacman.d/hooks/00-focuslock-games.hook /etc/systemd/system/focuslock-lockdown.service 2>/dev/null || true
 install -Dm755 "$here/focuslock-enforce" /usr/local/sbin/focuslock-enforce
-install -Dm755 "$here/focuslock-x" /usr/local/bin/focuslock-x
+(( budgets )) && install -Dm755 "$here/focuslock-x" /usr/local/bin/focuslock-x
 install -Dm644 "$here/focuslock-ban.hook" /etc/pacman.d/hooks/00-focuslock-ban.hook
+install -Dm644 "$here/focuslock-games.hook" /etc/pacman.d/hooks/00-focuslock-games.hook
 install -Dm644 "$here/focuslock-lockdown.service" /etc/systemd/system/focuslock-lockdown.service
 chattr -i /etc/polkit-1/rules.d/00-focuslock-lockdown.rules 2>/dev/null || true
 install -Dm644 "$here/focuslock-lockdown.rules" /etc/polkit-1/rules.d/00-focuslock-lockdown.rules
 chattr +i /usr/local/sbin/focuslock-enforce /etc/pacman.d/hooks/00-focuslock-ban.hook \
-          /etc/systemd/system/focuslock-lockdown.service /etc/polkit-1/rules.d/00-focuslock-lockdown.rules
+          /etc/pacman.d/hooks/00-focuslock-games.hook /etc/systemd/system/focuslock-lockdown.service /etc/polkit-1/rules.d/00-focuslock-lockdown.rules
 systemctl daemon-reload
 systemctl enable focuslock-lockdown.service
 systemctl start focuslock-lockdown.service

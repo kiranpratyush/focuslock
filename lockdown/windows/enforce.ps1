@@ -64,7 +64,7 @@ function Apply-BrowserPolicy {
         # QuicAllowed=0: HTTP/3 runs over UDP, which can't be cut when a budget closes.
         $p = @{ DnsOverHttpsMode='off'; IncognitoModeAvailability=1; InPrivateModeAvailability=1; BrowserGuestModeEnabled=0
                 BrowserAddPersonEnabled=0; ForceGoogleSafeSearch=1; ForceBingSafeSearch=2; ForceYouTubeRestrict=2
-                TorDisabled=1; BraveVPNDisabled=1; QuicAllowed=0 }
+                TorDisabled=1; BraveVPNDisabled=1; QuicAllowed=0; AllowDinosaurEasterEgg=0; AllowSurfGame=0 }
         foreach ($n in $p.Keys) {
             $t = if ($p[$n] -is [string]) { 'String' } else { 'DWord' }
             Set-ItemProperty $base $n $p[$n] -Type $t
@@ -80,14 +80,24 @@ function Apply-BrowserPolicy {
     }
 }
 
-function Kill-Banned {
+# Banned programs can't start at all (Image File Execution Options).
+function Block-Banned {
     $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
     foreach ($b in (Lines 'banned-apps.txt')) {
         if (-not (Test-Path "$ifeo\$b.exe")) { New-Item "$ifeo\$b.exe" -Force | Out-Null }
         Set-ItemProperty "$ifeo\$b.exe" Debugger 'C:\ProgramData\FocusLockLockdown\blocked.exe'
-        Get-Process -Name $b -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
-    Get-Process | Where-Object { $_.Path -match 'Tor Browser|tor-browser|Mullvad Browser' } | Stop-Process -Force
+}
+
+# Runs every 5 seconds, so it lists the processes once and not once per name.
+function Kill-Banned {
+    $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($b in (Lines 'banned-apps.txt')) { [void]$names.Add($b) }
+    # Games that aren't in banned-apps.txt: killed by where they run from.
+    $re = (@('Tor Browser', 'tor-browser', 'Mullvad Browser') +
+           @(Lines 'banned-paths.txt' | ForEach-Object { [regex]::Escape($_.Replace('/', '\')) })) -join '|'
+    Get-Process | Where-Object { $names.Contains($_.ProcessName) -or ($_.Path -and $_.Path -match $re) } |
+        Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 # --- Daily budgets (budgets.txt): open a blocked site for limited time ---
@@ -166,7 +176,7 @@ function Budget-Tick([int]$dt) {
     }
 }
 
-function Apply-All { Apply-Hosts; Apply-Dns; Apply-BrowserPolicy; Apply-BudgetFirewall; Kill-Banned }
+function Apply-All { Apply-Hosts; Apply-Dns; Apply-BrowserPolicy; Apply-BudgetFirewall; Block-Banned; Kill-Banned }
 
 New-Item $Req, $State -ItemType Directory -Force | Out-Null
 Budget-Tick 0

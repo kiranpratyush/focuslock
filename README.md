@@ -495,6 +495,7 @@ Every platform reads the same lists from `lockdown/`, so a site added once is bl
 |---|---|---|
 | `blocklist.txt` | One domain per line, `#` comments. `www.` and `m.` are added automatically. | Linux and Windows (hosts file + browser `URLBlocklist`), Android (Chrome `URLBlocklist`; packed into the APK by `build.sh`), iPad (web filter deny list; YouTube left out there) |
 | `banned-apps.txt` | One program name per line | Linux (killed if the process name matches), Windows (blocked from starting through Image File Execution Options, and killed) |
+| `banned-paths.txt` | One piece of a path per line | Linux and Windows: anything running from a matching folder is killed (catches games not named in `banned-apps.txt`) |
 | `budgets.txt` | `name  minutes-a-day  minutes-per-open  domains...` | Linux and Windows: sites you may open for a limited time (see [time budgets](#time-budgets-x-on-the-laptop)) |
 
 The Android app has its own list of hidden apps and the iPad its own list of blocked app IDs, because those are app package/bundle IDs rather than domains: `HIDDEN` in `android/src/dev/focuslock/phone/Policy.java` and `BLOCKED_APPS` in `lockdown/ios/profiles.py`.
@@ -503,7 +504,7 @@ The Android app has its own list of hidden apps and the iPad its own list of blo
 
 ## Linux lockdown
 
-**Install:** `sudo bash lockdown/linux/install.sh`
+**Install:** `sudo bash lockdown/linux/install.sh` (add `--no-budgets` to leave out the X time budget, so X stays fully blocked)
 
 What `install.sh` does, step by step:
 1. Uninstalls escape-route packages (Tor, Firefox, LibreWolf, Mullvad Browser).
@@ -512,6 +513,7 @@ What `install.sh` does, step by step:
    - `focuslock-enforce` → `/usr/local/sbin/`: the enforcer.
    - `focuslock-x` → `/usr/local/bin/`: opens a time budget.
    - `focuslock-ban.hook` → `/etc/pacman.d/hooks/`: pacman refuses to install banned packages.
+   - `focuslock-games.hook` → `/etc/pacman.d/hooks/`: pacman refuses to install games, launchers, Wine and emulators.
    - `focuslock-lockdown.service` → systemd, with `Restart=always` and `RefuseManualStop=yes`, so `systemctl stop` is refused.
    - `focuslock-lockdown.rules` → polkit: no non-root user can stop, disable or mask the service, even by typing a password into the popup.
 4. Makes those files immutable, enables and starts the service, and runs one pass right away.
@@ -523,7 +525,7 @@ What `install.sh` does, step by step:
 | `apply_hosts` | A marked block in `/etc/hosts` pointing every blocked domain (and `www.`/`m.`) at `0.0.0.0` |
 | `apply_dns` | NetworkManager global DNS = CleanBrowsing, plus an **nftables** table `inet focuslock` that rewrites *every* outgoing port-53 query to CleanBrowsing, drops IPv6 DNS, DNS-over-TLS (port 853) and the well-known DoH servers |
 | `apply_browser_policy` | Managed policy JSON for Chromium, Chrome, Brave and Edge: URL blocklist, no Incognito/guest/new profiles, DoH off, SafeSearch, YouTube Restricted Mode, Tor and Brave VPN off, no new extensions |
-| `kill_banned` | `kill -9` any process whose name or executable is in `banned-apps.txt`, or that looks like Tor/Mullvad Browser |
+| `kill_banned` | `kill -9` any process whose name or executable is in `banned-apps.txt` (no case), that runs from a folder in `banned-paths.txt`, or that looks like Tor/Mullvad Browser |
 | `budget_tick` | Time budgets (below) |
 
 The helper `put` writes a file only when it changed, logs `restored <file>` to the journal, and sets it immutable again. That is why hand edits come back within 30 seconds. See it working with `journalctl -t focuslock-lockdown`.
@@ -532,7 +534,7 @@ The helper `put` writes a file only when it changed, logs `restored <file>` to t
 
 ## Windows lockdown
 
-**Install:** in an **Administrator** PowerShell, `powershell -ExecutionPolicy Bypass -File lockdown\windows\install.ps1`
+**Install:** in an **Administrator** PowerShell, `powershell -ExecutionPolicy Bypass -File lockdown\windows\install.ps1` (add `-NoBudgets` to leave out the X time budget)
 
 1. Copies `enforce.ps1` and the rule files to `C:\ProgramData\FocusLockLockdown\`. Only SYSTEM and Administrators can change them; normal users can read.
 2. Records existing browser extensions as allowed, puts `focuslock-x` on the PATH, and removes per-user Tor Browser.
@@ -545,7 +547,7 @@ The helper `put` writes a file only when it changed, logs `restored <file>` to t
   - Windows' own DoH is prohibited.
   - Firewall rules block DNS to anything but the filter, plus DNS-over-TLS, the known DoH servers and IPv6 DNS.
 - **Browser policy:** registry policies for Chrome, Edge and Brave (the same settings as Linux, plus `QuicAllowed=0`).
-- **Banned apps:** blocked from launching (Image File Execution Options), and killed if running.
+- **Banned apps:** blocked from launching (Image File Execution Options), and killed if running. Anything running from a folder in `banned-paths.txt` is killed too.
 - **Time budgets:** like Linux, with firewall rules cutting off a budget site's servers once it closes.
 
 **The important last step:** make your everyday Windows account a **Standard** user. An administrator can simply run `uninstall.ps1`.

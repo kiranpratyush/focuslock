@@ -107,6 +107,7 @@ remember_ips() { # remember_ips <name> <domains...>
 }
 
 budget_tick() { # budget_tick <seconds since last tick>
+  [[ -f $SRC/budgets.txt || -n $OPEN_DOMAINS ]] || return 0   # no budgets installed
   local dt=$1 today name daily session doms new_open=""
   today=$(date +%F)
   mkdir -p -m 700 "$STATE"; mkdir -p "$RUN"; chmod 1733 "$RUN"
@@ -165,6 +166,8 @@ apply_browser_policy() {
   \"ForceYouTubeRestrict\": 2,
   \"TorDisabled\": true,
   \"BraveVPNDisabled\": true,
+  \"AllowDinosaurEasterEgg\": false,
+  \"AllowSurfGame\": false,
   \"ExtensionInstallBlocklist\": [\"*\"],
   \"ExtensionInstallAllowlist\": [${ext%,}],
   \"URLBlocklist\": [${list%,}]
@@ -176,22 +179,51 @@ apply_browser_policy() {
   done
 }
 
-kill_banned() {
-  local name pattern=""
-  for name in $(grep -vE '^\s*(#|$)' "$SRC/banned-apps.txt"); do pattern+="$name|"; done
-  pattern=${pattern%|}
-  local pid comm exe
-  for pid in /proc/[0-9]*; do
-    pid=${pid#/proc/}
-    comm=$(cat /proc/$pid/comm 2>/dev/null) || continue
-    exe=$(readlink /proc/$pid/exe 2>/dev/null)
-    if [[ $comm =~ ^($pattern)$ ]] || [[ ${exe##*/} =~ ^($pattern)$ ]] || [[ $exe =~ (tor-browser|torbrowser|mullvad-browser) ]]; then
-      kill -9 "$pid" 2>/dev/null && logger -t focuslock-lockdown "killed $comm ($exe)"
-    fi
-  done
+list() { grep -vE '^\s*(#|$)' "$SRC/$1" 2>/dev/null | tr -d '\r'; }
+
+declare -A names=()   # banned process names
+paths_re=""           # banned folders, as one regex
+
+# is_banned <process name> <executable>
+is_banned() {
+  local comm=${1,,} exe=${2% (deleted)}
+  exe=${exe,,}
+  [[ -n $comm && -n ${names[$comm]:-} ]] && return 0
+  [[ -z $exe ]] && return 1
+  [[ -n ${names[${exe##*/}]:-} ]] && return 0
+  [[ $exe =~ $paths_re ]]
 }
 
-pass() { apply_hosts; apply_dns; apply_browser_policy; kill_banned; }
+load_banned() {
+  local name full
+  names=()
+  while read -r name; do
+    name=${name,,}
+    names[$name]=1
+    names[${name:0:15}]=1   # the kernel cuts process names to 15 characters
+    names[$name.exe]=1      # a Windows game under Wine
+    full=$name.exe; names[${full:0:15}]=1
+  done < <(list banned-apps.txt)
+  paths_re="tor-browser|torbrowser|mullvad-browser"
+  while read -r name; do
+    paths_re+="|$(sed 's/[][\.*^$+?(){}|]/\\&/g' <<<"${name,,}")"
+  done < <(list banned-paths.txt)
+}
+
+# Runs every 5 seconds, so it must not start a program per process: one find
+# reads every executable link, and bash reads the names itself.
+kill_banned() {
+  local dir pid comm exe
+  while IFS=' ' read -r dir exe; do
+    pid=${dir#/proc/}
+    { read -r comm < "/proc/$pid/comm"; } 2>/dev/null || continue
+    if is_banned "$comm" "$exe"; then
+      kill -9 "$pid" 2>/dev/null && logger -t focuslock-lockdown "killed $comm ($exe)"
+    fi
+  done < <(find /proc/[0-9]*/exe -maxdepth 0 -printf '%h %l\n' 2>/dev/null)
+}
+
+pass() { apply_hosts; apply_dns; apply_browser_policy; load_banned; kill_banned; }
 
 if [[ ${1:-} == once ]]; then budget_tick 0; pass; exit 0; fi
 while true; do

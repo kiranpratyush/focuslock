@@ -1,0 +1,23 @@
+# Anything running from a path that contains one of these is killed (no case,
+# "/" also matches "\" on Windows). It catches games not named in
+# banned-apps.txt. Keep each line specific: a short word here kills real programs.
+/steamapps/common/
+/xboxgames/
+/epic games/
+/gog games/
+/gog galaxy/games/
+/riot games/
+/rockstar games/
+/ubisoft game launcher/
+/ea games/
+/origin games/
+/compatibilitytools.d/
+/.local/share/umu/
+/.minecraft/
+steamrip
+fitgirl
+/games/doom/
+/games/resident
+/games/forza
+/games/red dead
+/games/silent hill

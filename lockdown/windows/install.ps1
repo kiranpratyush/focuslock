@@ -1,12 +1,19 @@
 # Install the FocusLock lockdown. Run in an elevated PowerShell:
 #   powershell -ExecutionPolicy Bypass -File lockdown\windows\install.ps1
+#   -NoBudgets   no time budgets (removes installed ones): X stays fully blocked
+param([switch]$NoBudgets)
 $ErrorActionPreference = 'Stop'
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')) {
     throw 'Run this from an elevated (Administrator) PowerShell.'
 }
 $Src = 'C:\ProgramData\FocusLockLockdown'
 New-Item $Src -ItemType Directory -Force | Out-Null
-Copy-Item "$PSScriptRoot\enforce.ps1", "$PSScriptRoot\..\blocklist.txt", "$PSScriptRoot\..\banned-apps.txt", "$PSScriptRoot\..\budgets.txt" $Src -Force
+Copy-Item "$PSScriptRoot\enforce.ps1", "$PSScriptRoot\..\blocklist.txt", "$PSScriptRoot\..\banned-apps.txt", "$PSScriptRoot\..\banned-paths.txt" $Src -Force
+if ($NoBudgets) {
+    if (Test-Path "$Src\budgets.txt") { Remove-Item "$Src\budgets.txt" -Force }
+} else {
+    Copy-Item "$PSScriptRoot\..\budgets.txt" $Src -Force
+}
 New-Item "$Src\bin", "$Src\requests", "$Src\state" -ItemType Directory -Force | Out-Null
 Copy-Item "$PSScriptRoot\focuslock-x.ps1", "$PSScriptRoot\focuslock-x.cmd" "$Src\bin" -Force
 
@@ -45,6 +52,6 @@ Register-ScheduledTask -TaskName 'FocusLock Lockdown' -Action $action -Trigger $
 # A separate process, so this script's "Stop on any error" doesn't apply to it.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Src\enforce.ps1"
 Start-ScheduledTask -TaskName 'FocusLock Lockdown'
-Write-Host 'X budget: "focuslock-x open | close | status" in a new terminal.'
+if (-not $NoBudgets) { Write-Host 'X budget: "focuslock-x open | close | status" in a new terminal.' }
 Write-Host "Done. Restart your browsers and check chrome://policy / edge://policy."
 Write-Host "Last step: make your daily Windows account a Standard user, or this can all be undone."

@@ -1,0 +1,52 @@
+# Refuse to install games. Install only, not Upgrade: a game package that's
+# already here must not make every system update fail.
+[Trigger]
+Operation = Install
+Type = Package
+Target = steam
+Target = steam-native-runtime
+Target = lutris*
+Target = heroic-games-launcher*
+Target = bottles
+Target = wine
+Target = wine-staging
+Target = wine-ge*
+Target = proton-ge*
+Target = umu-launcher*
+Target = protonup*
+Target = protontricks*
+Target = moonlight-qt
+Target = geforcenow*
+Target = chiaki*
+Target = retroarch*
+Target = dolphin-emu*
+Target = pcsx2*
+Target = rpcs3*
+Target = ppsspp*
+Target = duckstation*
+Target = mame
+Target = dosbox*
+Target = scummvm
+Target = minecraft-launcher
+Target = prismlauncher*
+Target = multimc*
+Target = luanti*
+Target = minetest*
+Target = supertux*
+Target = xonotic*
+Target = openttd*
+Target = 0ad*
+Target = wesnoth*
+Target = gzdoom*
+Target = uzdoom*
+Target = gnome-chess
+Target = gnome-mines
+Target = gnome-sudoku
+Target = kmines
+Target = ksudoku
+
+[Action]
+Description = FocusLock: games are blocked.
+When = PreTransaction
+Exec = /usr/bin/false
+AbortOnFail
