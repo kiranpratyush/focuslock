@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.focuslock.phone"
-    android:versionCode="2"
-    android:versionName="0.2">
+    android:versionCode="3"
+    android:versionName="0.3">
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Android checks the Private DNS host from this app before accepting it. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Daily YouTube limit: reads app usage (granted over adb with appops),
+    <!-- Daily limits: reads app usage (granted over adb with appops),
          runs as a foreground service. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

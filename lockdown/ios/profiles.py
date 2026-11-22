@@ -22,15 +22,10 @@ ID = "dev.focuslock.ipad"
 DOH = "https://doh.cleanbrowsing.org/doh/adult-filter/"
 DNS_SERVERS = ["185.228.168.10", "185.228.169.11", "2a0d:2a00:1::1", "2a0d:2a00:2::1"]
 
-# YouTube is allowed on the iPad (with a Screen Time limit), so its domains
-# are left out of the shared blocklist.
-ALLOWED = {"youtube.com", "youtu.be", "youtube-nocookie.com", "youtubei.googleapis.com",
-           "ytimg.com", "googlevideo.com"}
-
 # Apps that can't open even if they're installed (supervised only).
 BLOCKED_APPS = [
-    # video and feeds (YouTube itself is allowed)
-    "com.google.ios.youtubemusic", "com.google.ios.youtubekids",
+    # video and feeds
+    "com.google.ios.youtube", "com.google.ios.youtubemusic", "com.google.ios.youtubekids",
     "com.burbn.instagram", "com.burbn.barcelona", "com.facebook.Facebook",
     "com.zhiliaoapp.musically", "com.reddit.Reddit", "com.atebits.Tweetie2",
     "com.toyopagroup.picaboo", "pinterest", "com.netflix.Netflix",
@@ -51,7 +46,7 @@ def blocklist():
     sites = []
     for line in (ROOT.parent / "blocklist.txt").read_text().splitlines():
         line = line.strip()
-        if line and not line.startswith("#") and line not in ALLOWED:
+        if line and not line.startswith("#"):
             sites.append(line)
     return sites
 

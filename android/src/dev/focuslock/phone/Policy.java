@@ -42,6 +42,35 @@ final class Policy {
         "com.cloudflare.onedotonedotonedotone", "com.protonvpn.android", "com.nordvpn.android",
         "free.vpn.unblock.proxy.turbovpn", "com.psiphon3", "com.psiphon3.subscription",
         "com.expressvpn.vpn", "com.windscribe.vpn", "net.mullvad.mullvadvpn",
+        // games and game streaming
+        "com.chess", "org.lichess.mobileapp", "com.matiks.app", "com.playdigious.deadcells.mobile",
+        "com.google.android.play.games", "com.playstation.remoteplay", "com.valvesoftware.steamlink",
+        "com.nvidia.geforcenow", "com.microsoft.xcloud", "com.limelight",
+        "com.roblox.client", "com.mojang.minecraftpe", "com.pubg.imobile", "com.tencent.ig",
+        "com.dts.freefireth", "com.dts.freefiremax", "com.activision.callofduty.shooter",
+        "com.supercell.clashofclans", "com.supercell.clashroyale", "com.supercell.brawlstars",
+        "com.king.candycrushsaga", "com.kiloo.subwaysurf", "com.ludo.king", "com.miHoYo.GenshinImpact",
+        "com.dream11.fantasy.cricket.football.kabaddi",
+    };
+
+    // Shopping apps that share one daily limit (LIMIT --ei shop_minutes N).
+    static final String[] SHOPPING = {
+        "in.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping", "in.swiggy.android",
+        "com.swiggy.android.instamart", "com.flipkart.android", "com.flipkart.shopsy", "com.myntra.android",
+        "com.meesho.supply", "com.ril.ajio", "com.tul.tatacliq", "com.fsn.nykaa", "com.lenskart.app",
+        "co.shopney.snitch", "com.application.zomato", "com.grofers.customerapp", "com.zeptoconsumerapp",
+        "com.bigbasket.mobileapp", "com.jpl.jiomart", "com.snapdeal.main", "com.ebay.mobile",
+    };
+
+    // Their sites are always blocked in Chrome while there's a shopping limit:
+    // Android can't tell how long one site was open, only Chrome as a whole.
+    // A leading dot means that exact host, so aws.amazon.com keeps working.
+    static final String[] SHOPPING_SITES = {
+        "amazon.in", ".amazon.com", ".www.amazon.com", ".m.amazon.com", "amzn.in", "amzn.to",
+        "swiggy.com", "flipkart.com", "fkrt.it", "shopsy.in", "myntra.com", "meesho.com", "ajio.com",
+        "tatacliq.com", "nykaa.com", "nykaafashion.com", "lenskart.com", "snitch.com", "snitch.co.in",
+        "zomato.com", "blinkit.com", "zepto.com", "zeptonow.com", "bigbasket.com", "jiomart.com",
+        "snapdeal.com", "ebay.com", "ebay.in",
     };
 
     static final String[] RESTRICTIONS = {
@@ -72,16 +101,18 @@ final class Policy {
     static int youtubeLimitMinutes(Context c) { return prefs(c).getInt("yt_limit", 0); }
     static boolean youtubeOver(Context c) { return prefs(c).getBoolean("yt_over", false); }
 
-    // Daily YouTube limit. Lowering it is always allowed; raising it or
+    static int shopLimitMinutes(Context c) { return prefs(c).getInt("shop_limit", 0); }
+
+    // Daily limits. Lowering it is always allowed; raising it or
     // removing it only in test mode.
-    static String setYoutubeLimit(Context c, int minutes) {
-        int cur = youtubeLimitMinutes(c);
+    static String setLimit(Context c, String name, String pref, int minutes) {
+        int cur = prefs(c).getInt(pref, 0);
         boolean looser = cur > 0 && (minutes <= 0 || minutes > cur);
         if (isFinal(c) && looser) return "Refused: final lock is on; the limit can only go down.";
-        prefs(c).edit().putInt("yt_limit", Math.max(minutes, 0)).commit();
+        prefs(c).edit().putInt(pref, Math.max(minutes, 0)).commit();
         if (minutes > 0) UsageWatcher.start(c);
         UsageWatcher.check(c);
-        return "YouTube limit: " + (minutes > 0 ? minutes + " min a day" : "off") + "\n" + apply(c);
+        return name + " limit: " + (minutes > 0 ? minutes + " min a day" : "off") + "\n" + apply(c);
     }
 
     static String setAllowed(Context c, String csv) {
@@ -139,6 +170,8 @@ final class Policy {
            .append("• Hidden apps: ").append(hidden).append('\n')
            .append(allow.isEmpty() ? "" : "• Allowed on this phone: " + allow + "\n")
            .append(ytLimit > 0 ? "• YouTube limit: " + ytLimit + " min a day" + (youtubeOver(c) ? " (used up today)" : "") + "\n" : "")
+           .append(shopLimitMinutes(c) > 0 ? "• Shopping limit: " + shopLimitMinutes(c) + " min a day, apps only\n" : "")
+           .append(UsageWatcher.canCount(c) || (ytLimit <= 0 && shopLimitMinutes(c) <= 0) ? "" : "! Usage access is off, so limited apps stay blocked\n")
            .append("• Chrome: no Incognito, SafeSearch, blocked sites");
         return out.toString();
     }
@@ -167,6 +200,7 @@ final class Policy {
                 out.add(line);
             }
         } catch (Exception ignored) { }
+        if (shopLimitMinutes(c) > 0) out.addAll(java.util.Arrays.asList(SHOPPING_SITES));
         return out.toArray(new String[0]);
     }
 
@@ -179,6 +213,7 @@ final class Policy {
         for (String r : RESTRICTIONS) { try { dpm.clearUserRestriction(a, r); } catch (Exception ignored) { } }
         for (String p : HIDDEN) { try { dpm.setApplicationHidden(a, p, false); } catch (Exception ignored) { } }
         try { dpm.setPackagesSuspended(a, new String[] { UsageWatcher.YT }, false); } catch (Exception ignored) { }
+        try { dpm.setPackagesSuspended(a, SHOPPING, false); } catch (Exception ignored) { }
         dpm.setApplicationRestrictions(a, CHROME, new Bundle());
         try { dpm.setUninstallBlocked(a, CHROME, false); } catch (Exception ignored) { }
         try { dpm.setGlobalPrivateDnsModeOpportunistic(a); } catch (Exception ignored) { }

@@ -15,7 +15,13 @@ public class CommandReceiver extends BroadcastReceiver {
         } else if (action.endsWith(".ALLOW")) {
             result = Policy.setAllowed(context, intent.getStringExtra("packages"));
         } else if (action.endsWith(".LIMIT")) {
-            result = Policy.setYoutubeLimit(context, intent.getIntExtra("youtube_minutes", 0));
+            // Only the limits that were named: the others stay as they are.
+            result = "";
+            if (intent.hasExtra("youtube_minutes"))
+                result = Policy.setLimit(context, "YouTube", "yt_limit", intent.getIntExtra("youtube_minutes", 0));
+            if (intent.hasExtra("shop_minutes"))
+                result = Policy.setLimit(context, "Shopping", "shop_limit", intent.getIntExtra("shop_minutes", 0));
+            if (result.isEmpty()) result = "Use --ei youtube_minutes N or --ei shop_minutes N";
         } else if (action.endsWith(".FINAL_LOCK")) {
             result = Policy.finalLock(context);
         } else {

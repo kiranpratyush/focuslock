@@ -493,7 +493,7 @@ Every platform reads the same lists from `lockdown/`, so a site added once is bl
 
 | File | Format | Used by |
 |---|---|---|
-| `blocklist.txt` | One domain per line, `#` comments. `www.` and `m.` are added automatically. | Linux and Windows (hosts file + browser `URLBlocklist`), Android (Chrome `URLBlocklist`; packed into the APK by `build.sh`), iPad (web filter deny list; YouTube left out there) |
+| `blocklist.txt` | One domain per line, `#` comments. `www.` and `m.` are added automatically. | Linux and Windows (hosts file + browser `URLBlocklist`), Android (Chrome `URLBlocklist`; packed into the APK by `build.sh`), iPad (web filter deny list) |
 | `banned-apps.txt` | One program name per line | Linux (killed if the process name matches), Windows (blocked from starting through Image File Execution Options, and killed) |
 | `banned-paths.txt` | One piece of a path per line | Linux and Windows: anything running from a matching folder is killed (catches games not named in `banned-apps.txt`) |
 | `budgets.txt` | `name  minutes-a-day  minutes-per-open  domains...` | Linux and Windows: sites you may open for a limited time (see [time budgets](#time-budgets-x-on-the-laptop)) |
@@ -587,7 +587,7 @@ adb shell am broadcast -n dev.focuslock.phone/.CommandReceiver -a dev.focuslock.
 | `APPLY` | (Re)apply every rule. It also runs at boot and after an app update. |
 | `RELEASE` | Test mode only: lift everything, e.g. to install an app. Run `APPLY` afterwards. |
 | `ALLOW` | Per-phone exceptions, e.g. YouTube on a family phone |
-| `LIMIT` | Daily YouTube minutes. The limit needs usage access first: `adb shell appops set dev.focuslock.phone GET_USAGE_STATS allow` |
+| `LIMIT` | Daily minutes: `--ei youtube_minutes N` or `--ei shop_minutes N`. Shopping apps (`SHOPPING`) share one limit and their sites are blocked in Chrome. Only the limits you name change. Limits need usage access first: `adb shell appops set dev.focuslock.phone GET_USAGE_STATS allow` |
 | `FINAL_LOCK` | **One way.** Turns off USB debugging and developer options for good; after this the limit can only go down. |
 
 **Installing an app later:** `RELEASE` → install it → `APPLY`.
@@ -601,8 +601,8 @@ iPadOS doesn't let an app take control like Android's Device Owner. The equivale
 - `profiles.py` writes two configuration profiles (`.mobileconfig` files, which are XML property lists):
   - **`focuslock-lock`**:
     - Encrypted DNS through CleanBrowsing that can't be turned off.
-    - Apple's built-in adult web filter, plus `blocklist.txt` as a deny list (YouTube left out).
-    - Blocked app IDs: Instagram, X, Reddit, other browsers, VPNs and so on.
+    - Apple's built-in adult web filter, plus `blocklist.txt` as a deny list.
+    - Blocked app IDs: YouTube, Instagram, X, Reddit, other browsers, VPNs and so on.
     - Restrictions: no Erase All Content and Settings, no new profiles, no VPN setup, no account changes, no iCloud Private Relay, no App Clips.
   - **`focuslock-noinstall`**: no installing or deleting apps. It's separate so it can be lifted for a moment to install an app.
   - Both are marked non-removable, which iPadOS honours on a supervised device.
@@ -622,7 +622,7 @@ iPadOS doesn't let an app take control like Android's Device Owner. The equivale
 4. With the iPad at **Hello** and plugged in: `ipad keybag ~/focuslock-ipad-keybag.pem`, then `ipad supervise ~/focuslock-ipad-keybag.pem`.
 5. Finish setup on the iPad: restore the backup, sign in to the Apple ID, install every app you want (account changes and installs are blocked afterwards).
 6. `ipad apply ~/focuslock-ipad-keybag.pem`.
-7. **YouTube daily limit:** profiles can't set time limits, so use Screen Time → App Limits on the iPad, with a passcode someone else sets.
+7. **Daily limits:** profiles can't set time limits, so use Screen Time → App Limits on the iPad, with a passcode someone else sets.
 8. Hand the keybag to someone else and delete your copy. Whoever holds it can unlock the iPad.
 
 **Implementation note:** the iPad rejects a second silent install in the same connection ("Escalate is not a valid request type"), so `apply` installs one profile per `pymobiledevice3` call.
